@@ -112,7 +112,7 @@ async def detect_recurring(db: AsyncSession) -> int:
 
     upserted = 0
     for merchant, txs in by_merchant.items():
-        if len(txs) < 3:
+        if len(txs) < 2:
             continue
 
         txs_sorted = sorted(txs, key=lambda t: t.posted_at)
@@ -122,10 +122,18 @@ async def detect_recurring(db: AsyncSession) -> int:
             continue
 
         med_interval = median(intervals)
-        if 27 <= med_interval <= 33:
+        if 25 <= med_interval <= 35:
             frequency = "monthly"
-        elif 360 <= med_interval <= 370:
+            cycle_days = 30
+        elif 12 <= med_interval <= 16:
+            frequency = "bi-weekly"
+            cycle_days = 14
+        elif 6 <= med_interval <= 8:
+            frequency = "weekly"
+            cycle_days = 7
+        elif 350 <= med_interval <= 380:
             frequency = "annual"
+            cycle_days = 365
         else:
             continue  # Not a recognizable recurring pattern
 
@@ -134,9 +142,7 @@ async def detect_recurring(db: AsyncSession) -> int:
         last_tx = txs_sorted[-1]
 
         # Compute next expected date
-        next_expected = last_tx.posted_at + timedelta(
-            days=30 if frequency == "monthly" else 365
-        )
+        next_expected = last_tx.posted_at + timedelta(days=cycle_days)
 
         # Upsert
         result2 = await db.execute(
