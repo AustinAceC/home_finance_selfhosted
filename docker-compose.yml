@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-finance}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-finance_db}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-finance} -d ${POSTGRES_DB:-finance_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-finance}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-finance_db}
+      SIMPLEFIN_SETUP_TOKEN: ${SIMPLEFIN_SETUP_TOKEN:-}
+      SIMPLEFIN_ACCESS_URL: ${SIMPLEFIN_ACCESS_URL:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:-gemini-2.0-flash}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMS_GATEWAY_EMAIL: ${SMS_GATEWAY_EMAIL:-}
+      SHIELD_TV_IP: ${SHIELD_TV_IP:-}
+      SHIELD_LIVE_TOAST_ENABLED: ${SHIELD_LIVE_TOAST_ENABLED:-false}
+      SYNC_INTERVAL_HOURS: ${SYNC_INTERVAL_HOURS:-4}
+      DEBT_ALERT_THRESHOLD: ${DEBT_ALERT_THRESHOLD:-1500.0}
+      SAFE_TO_SPEND_ALERT_THRESHOLD: ${SAFE_TO_SPEND_ALERT_THRESHOLD:-500.0}
+      TIMEZONE: ${TIMEZONE:-America/Los_Angeles}
+      ROAST_BLACKLIST: ${ROAST_BLACKLIST:-DOORDASH,UBER EATS,DRAFTKINGS,STEAM}
+    ports:
+      # NOTE: Host port 8001 to avoid conflict with Coolify Core on 8000
+      - "8001:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://10.10.10.4:8001}
+    ports:
+      - "3000:3000"
+
+volumes:
+  pg_data:
