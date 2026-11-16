@@ -256,7 +256,7 @@ async def generate_roast(db: AsyncSession, tx: Transaction) -> Optional[str]:
             model=settings.LLM_MODEL,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(context)},
+                {"role": "user", "content": f"Roast this purchase and demand an excuse: {json.dumps(context)}"},
             ],
             max_tokens=200,
             temperature=0.9,
