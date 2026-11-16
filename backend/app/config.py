@@ -27,11 +27,16 @@ class Settings(BaseSettings):
     TELEGRAM_CHAT_ID: Optional[str] = None
 
     # --- SMTP / Carrier email-to-SMS fallback ---
-    SMTP_HOST: Optional[str] = None
+    SMTP_HOST: Optional[str] = "smtp.gmail.com"
     SMTP_PORT: int = 587
     SMTP_USER: Optional[str] = None
     SMTP_PASS: Optional[str] = None
     SMS_GATEWAY_EMAIL: Optional[str] = None
+
+    # --- Text-to-Speech (Edge-TTS) ---
+    TTS_VOICE: str = "en-US-ChristopherNeural"  # Deep, resonant, authoritative male voice
+    TTS_RATE: str = "+6%"                       # Slightly faster, energetic natural delivery
+    TTS_PITCH: str = "-2Hz"                     # Deep commanding timbre
 
     # --- Nvidia Shield TV ---
     SHIELD_TV_IP: Optional[str] = None

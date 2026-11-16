@@ -2,17 +2,17 @@
 Notifier service — multi-driver outbound messaging + inbound reply routing.
 
 Supported drivers:
-  1. Telegram Bot (primary, two-way)
-  2. Carrier Email-to-SMS via SMTP (zero-cost, outbound only)
+  1. Telegram Bot (primary, two-way text + neural voice notes via edge-tts)
+  2. Carrier Email-to-SMS via SMTP (zero-cost, outbound SMS directly to cell phone)
 """
 import logging
-import smtplib
 from email.mime.text import MIMEText
 from typing import Optional
 
 import httpx
 
 from app.config import settings
+from app.services.tts import generate_speech
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 async def send_telegram(message: str, chat_id: Optional[str] = None) -> bool:
     """
-    Send a message via Telegram Bot API.
+    Send a text message via Telegram Bot API.
     Returns True on success, False on failure.
     """
     token = settings.TELEGRAM_BOT_TOKEN
@@ -44,18 +44,76 @@ async def send_telegram(message: str, chat_id: Optional[str] = None) -> bool:
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.post(url, json=payload)
             response.raise_for_status()
-            logger.info(f"Telegram message sent: {message[:60]}...")
+            logger.info(f"Telegram text message sent: {message[:60]}...")
             return True
     except Exception as e:
         logger.error(f"Telegram send failed: {e}")
         return False
 
 
+async def send_telegram_voice(
+    audio_bytes: bytes,
+    caption: Optional[str] = None,
+    chat_id: Optional[str] = None,
+) -> bool:
+    """
+    Send an audio memo / voice message via Telegram Bot API (/sendVoice).
+    Telegram displays this as an interactive waveform voice message.
+    """
+    token = settings.TELEGRAM_BOT_TOKEN
+    cid = chat_id or settings.TELEGRAM_CHAT_ID
+
+    if not token or not cid or not audio_bytes:
+        logger.warning("Telegram voice note missing token, chat_id, or audio.")
+        return False
+
+    url = f"https://api.telegram.org/bot{token}/sendVoice"
+    files = {
+        "voice": ("marcus_roast.mp3", audio_bytes, "audio/mpeg")
+    }
+    data = {
+        "chat_id": cid,
+    }
+    if caption:
+        data["caption"] = caption[:1024]
+        data["parse_mode"] = "HTML"
+
+    try:
+        async with httpx.AsyncClient(timeout=25) as client:
+            response = await client.post(url, data=data, files=files)
+            response.raise_for_status()
+            logger.info("Telegram voice message delivered successfully.")
+            return True
+    except Exception as e:
+        logger.error(f"Telegram voice send failed: {e}")
+        return False
+
+
+async def voice_and_send_telegram(
+    text: str,
+    header: str = "🗣️ <b>Marcus (Parole Officer):</b>\n\n",
+    chat_id: Optional[str] = None,
+) -> bool:
+    """
+    Generate neural speech with edge-tts and deliver as a voice message to Telegram.
+    Falls back to standard text message if audio generation or upload fails.
+    """
+    audio = await generate_speech(text)
+    caption = f"{header}{text}"
+
+    if audio:
+        sent = await send_telegram_voice(audio, caption=caption, chat_id=chat_id)
+        if sent:
+            return True
+
+    # Fallback to plain text
+    return await send_telegram(caption, chat_id=chat_id)
+
+
 async def set_telegram_webhook(webhook_url: str) -> bool:
     """
     Register the FastAPI webhook endpoint with Telegram so inbound messages
     are forwarded here instead of requiring polling.
-    Call this once during setup.
     """
     token = settings.TELEGRAM_BOT_TOKEN
     if not token:
@@ -79,16 +137,17 @@ async def send_sms_via_email(message: str) -> bool:
     Requires SMTP credentials and SMS_GATEWAY_EMAIL in settings.
     """
     if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASS, settings.SMS_GATEWAY_EMAIL]):
-        logger.warning("SMTP/SMS not configured — skipping.")
+        logger.debug("SMTP/SMS not fully configured — skipping.")
         return False
 
     try:
         import aiosmtplib
 
-        msg = MIMEText(message[:160])  # SMS char limit
+        # Standard SMS 160 character limit per segment
+        msg = MIMEText(message[:320])
         msg["From"] = settings.SMTP_USER
         msg["To"] = settings.SMS_GATEWAY_EMAIL
-        msg["Subject"] = ""  # Carrier gateway ignores subject
+        msg["Subject"] = ""  # Carrier gateways ignore or prepend subject
 
         await aiosmtplib.send(
             msg,
@@ -98,7 +157,7 @@ async def send_sms_via_email(message: str) -> bool:
             password=settings.SMTP_PASS,
             start_tls=True,
         )
-        logger.info("SMS via email sent successfully.")
+        logger.info(f"SMS via email gateway sent to {settings.SMS_GATEWAY_EMAIL}.")
         return True
     except Exception as e:
         logger.error(f"SMTP send failed: {e}")
@@ -111,14 +170,38 @@ async def send_sms_via_email(message: str) -> bool:
 
 async def notify(message: str) -> bool:
     """
-    Send a notification using the best available driver.
-    Priority: Telegram → SMS-via-email
+    Send a basic notification using available drivers.
+    Priority: Telegram -> SMS-via-email
     """
+    tg_success = False
     if settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_CHAT_ID:
-        return await send_telegram(message)
-    return await send_sms_via_email(message)
+        tg_success = await send_telegram(message)
+
+    sms_success = False
+    if settings.SMS_GATEWAY_EMAIL:
+        sms_success = await send_sms_via_email(message)
+
+    return tg_success or sms_success
 
 
 async def send_roast(tx_id: str, roast_message: str) -> bool:
-    """High-level helper called after roast generation."""
-    return await notify(f"🤖 Financial Parole Officer:\n\n{roast_message}")
+    """
+    High-level roast dispatcher:
+      1. Generates neural speech and delivers a voice note + transcription to Telegram.
+      2. If carrier SMS is configured, sends a real SMS text to the user's phone.
+    """
+    # 1. Telegram delivery (Voice Memo + Text)
+    tg_success = False
+    if settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_CHAT_ID:
+        tg_success = await voice_and_send_telegram(
+            text=roast_message,
+            header="🗣️ <b>Marcus (Parole Officer):</b>\n\n",
+        )
+
+    # 2. Real SMS delivery (via Carrier Email Gateway)
+    sms_success = False
+    if settings.SMS_GATEWAY_EMAIL:
+        sms_text = f"Marcus (Parole Officer): {roast_message}"
+        sms_success = await send_sms_via_email(sms_text)
+
+    return tg_success or sms_success

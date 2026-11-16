@@ -85,7 +85,12 @@ async def telegram_long_poll():
                             async with AsyncSessionLocal() as db:
                                 comeback = await process_excuse(db, text)
                                 if comeback:
-                                    await send_telegram(f"⚖️ <b>Parole Officer Ruling:</b>\n\n{comeback}", chat_id=chat_id)
+                                    from app.services.notifier import voice_and_send_telegram
+                                    await voice_and_send_telegram(
+                                        comeback,
+                                        header="⚖️ <b>Marcus (Parole Officer Ruling):</b>\n\n",
+                                        chat_id=chat_id,
+                                    )
         except asyncio.CancelledError:
             break
         except Exception as e:

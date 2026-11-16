@@ -826,19 +826,19 @@ export default function DashboardPage() {
           <div className="flex items-center space-x-2">
             <Flame className="w-5 h-5 text-orange-500" />
             <h2 className="text-lg font-bold tracking-tight text-white">
-              AI Roast Bot — Recent Disciplinary Actions
+              Marcus — AI Financial Parole Officer
             </h2>
           </div>
           <div className="flex items-center space-x-3">
-            <span className="text-xs font-mono text-zinc-500 hidden sm:inline">Two-Way Telegram Loop</span>
+            <span className="text-xs font-mono text-zinc-500 hidden sm:inline">Voice Memos & SMS</span>
             <button
               onClick={handleTestRoast}
               disabled={testingRoast}
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 text-xs font-mono transition-all disabled:opacity-50"
-              title="Simulate a suspicious purchase and trigger an instant AI roast to Telegram"
+              title="Simulate a suspicious purchase and trigger Marcus voice note + text"
             >
               <Sparkles className={`w-3.5 h-3.5 ${testingRoast ? "animate-spin" : ""}`} />
-              <span>{testingRoast ? "Roasting..." : "🧪 Test Sus Purchase"}</span>
+              <span>{testingRoast ? "Marcus is Cooking..." : "🧪 Test Marcus Roast"}</span>
             </button>
           </div>
         </div>
