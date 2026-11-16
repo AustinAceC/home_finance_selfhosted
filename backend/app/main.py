@@ -844,24 +844,11 @@ async def roast_real_purchases(
 @app.get("/api/debug/test-voice")
 async def debug_test_voice(text: Optional[str] = None):
     """Direct test endpoint for Marcus Edge-TTS speech and Telegram delivery."""
-    import traceback
-    import edge_tts
-    from app.config import settings
+    from app.services.tts import generate_speech
     from app.services.notifier import send_telegram, send_telegram_voice, send_telegram_audio
 
     test_text = text or "Hold up! My brother in Christ, this is Marcus checking in on your financial probation. Can you hear me now?"
-    error_str = None
-    audio = b""
-    try:
-        communicate = edge_tts.Communicate(text=test_text, voice=settings.TTS_VOICE, rate=settings.TTS_RATE, pitch=settings.TTS_PITCH)
-        buffer = bytearray()
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                buffer.extend(chunk["data"])
-        audio = bytes(buffer)
-    except Exception as e:
-        error_str = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
-
+    audio = await generate_speech(test_text)
     caption = f"🗣️ <b>Marcus (Parole Officer Audio Test):</b>\n\n{test_text}"
 
     voice_res = await send_telegram_voice(audio, caption=caption) if audio else False
@@ -871,9 +858,7 @@ async def debug_test_voice(text: Optional[str] = None):
     return {
         "status": "success",
         "text": test_text,
-        "voice": settings.TTS_VOICE,
         "audio_bytes": len(audio),
-        "tts_error": error_str,
         "voice_sent": voice_res,
         "audio_sent": audio_res,
         "text_sent": text_res,

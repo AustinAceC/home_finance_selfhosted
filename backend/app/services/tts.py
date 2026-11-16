@@ -1,10 +1,11 @@
 """
-TTS Service — Generate realistic neural speech audio via edge-tts (free, no API key required).
+TTS Service — Generate realistic neural speech audio via edge-tts with automatic gTTS fallback.
 """
 import io
 import logging
 from typing import Optional
 
+from gtts import gTTS
 import edge_tts
 
 from app.config import settings
@@ -20,31 +21,11 @@ async def generate_speech(
 ) -> bytes:
     """
     Generate MP3 audio bytes for the given text.
-    Uses edge-tts with deep, energetic male neural voice settings.
+    Tries edge-tts first; falls back seamlessly to gTTS if Microsoft blocks the websocket.
     """
     v = voice or settings.TTS_VOICE
-    r = rate or settings.TTS_RATE
-    p = pitch or settings.TTS_PITCH
 
-    # 1. Try with customized rate/pitch
-    try:
-        kwargs = {"text": text, "voice": v}
-        if r:
-            kwargs["rate"] = r
-        if p:
-            kwargs["pitch"] = p
-        communicate = edge_tts.Communicate(**kwargs)
-        buffer = bytearray()
-        async for chunk in communicate.stream():
-            if chunk.get("type") == "audio":
-                buffer.extend(chunk.get("data", b""))
-        if buffer:
-            logger.info(f"Generated {len(buffer)} bytes of audio for text: '{text[:40]}...'")
-            return bytes(buffer)
-    except Exception as e:
-        logger.warning(f"TTS custom settings failed: {e}. Retrying with default voice settings...")
-
-    # 2. Fallback to basic Communicate without rate/pitch
+    # 1. Try edge-tts
     try:
         communicate = edge_tts.Communicate(text=text, voice=v)
         buffer = bytearray()
@@ -52,18 +33,19 @@ async def generate_speech(
             if chunk.get("type") == "audio":
                 buffer.extend(chunk.get("data", b""))
         if buffer:
+            logger.info(f"Edge-TTS generated {len(buffer)} bytes of audio.")
             return bytes(buffer)
     except Exception as e:
-        logger.error(f"TTS basic fallback failed: {e}")
+        logger.warning(f"Edge-TTS failed ({e}). Falling back to Google TTS...")
 
-    # 3. Fallback to standard US male voice en-US-GuyNeural
+    # 2. Fallback to gTTS (rock-solid, zero API keys, no 403 blocks)
     try:
-        communicate = edge_tts.Communicate(text=text, voice="en-US-GuyNeural")
-        buffer = bytearray()
-        async for chunk in communicate.stream():
-            if chunk.get("type") == "audio":
-                buffer.extend(chunk.get("data", b""))
-        return bytes(buffer)
+        fp = io.BytesIO()
+        tts = gTTS(text=text, lang="en", tld="com")
+        tts.write_to_fp(fp)
+        audio_data = fp.getvalue()
+        logger.info(f"gTTS generated {len(audio_data)} bytes of audio.")
+        return audio_data
     except Exception as e:
-        logger.error(f"TTS ultimate fallback failed: {e}")
+        logger.error(f"gTTS generation failed: {e}")
         return b""
