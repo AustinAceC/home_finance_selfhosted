@@ -10,6 +10,8 @@ import {
   updateAccount,
   triggerSync,
   triggerTestRoast,
+  purgeTestTransactions,
+  roastRealPurchases,
   MetricsSummary,
   Transaction,
   RecurringSchedule,
@@ -41,6 +43,7 @@ import {
   Home,
   Receipt,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -91,6 +94,34 @@ export default function DashboardPage() {
       await loadData();
     } catch (err: any) {
       alert("Failed to trigger test roast: " + err.message);
+    } finally {
+      setTestingRoast(false);
+    }
+  };
+
+  const handlePurgeTests = async () => {
+    try {
+      const res = await purgeTestTransactions();
+      setSyncFeedback(`🧹 Removed ${res.deleted_count} test transactions.`);
+      await loadData();
+    } catch (err: any) {
+      alert("Failed to purge test messages: " + err.message);
+    }
+  };
+
+  const handleRoastReal = async () => {
+    setTestingRoast(true);
+    try {
+      await purgeTestTransactions();
+      const res = await roastRealPurchases(true);
+      if (res.roasted_count > 0) {
+        setSyncFeedback(`🔥 Marcus roasted ${res.roasted_count} real purchases and sent the top one to your phone & Telegram!`);
+      } else {
+        setSyncFeedback("No un-roasted suspicious real purchases found.");
+      }
+      await loadData();
+    } catch (err: any) {
+      alert("Failed to roast real purchases: " + err.message);
     } finally {
       setTestingRoast(false);
     }
@@ -829,16 +860,23 @@ export default function DashboardPage() {
               Marcus — AI Financial Parole Officer
             </h2>
           </div>
-          <div className="flex items-center space-x-3">
-            <span className="text-xs font-mono text-zinc-500 hidden sm:inline">Voice Memos & SMS</span>
+          <div className="flex items-center space-x-2 sm:space-x-3">
             <button
-              onClick={handleTestRoast}
+              onClick={handlePurgeTests}
+              className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800 text-xs font-mono transition-all"
+              title="Remove simulated/test transactions from database"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-zinc-500" />
+              <span>Purge Tests</span>
+            </button>
+            <button
+              onClick={handleRoastReal}
               disabled={testingRoast}
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 text-xs font-mono transition-all disabled:opacity-50"
-              title="Simulate a suspicious purchase and trigger Marcus voice note + text"
+              title="Roast actual transactions from your bank and dispatch top one to phone"
             >
               <Sparkles className={`w-3.5 h-3.5 ${testingRoast ? "animate-spin" : ""}`} />
-              <span>{testingRoast ? "Marcus is Cooking..." : "🧪 Test Marcus Roast"}</span>
+              <span>{testingRoast ? "Marcus is Roasting..." : "🔥 Roast Real Purchases"}</span>
             </button>
           </div>
         </div>

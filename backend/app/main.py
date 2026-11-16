@@ -748,3 +748,94 @@ async def trigger_test_roast(body: TestRoastRequest, db: AsyncSession = Depends(
         roast=roast,
         telegram_sent=telegram_sent,
     )
+
+
+# ---------------------------------------------------------------------------
+# Purge Test Transactions & Roast Real Data
+# ---------------------------------------------------------------------------
+
+@app.post("/api/roast/purge-tests")
+async def purge_test_transactions(db: AsyncSession = Depends(get_db)):
+    """Remove all simulated/test transactions from the database."""
+    from sqlalchemy import delete
+    result = await db.execute(
+        delete(Transaction).where(Transaction.id.like("TRN-TEST-%"))
+    )
+    await db.commit()
+    return {"status": "success", "deleted_count": result.rowcount}
+
+
+@app.post("/api/roast/roast-real")
+async def roast_real_purchases(
+    dispatch_latest: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Find actual real transactions that have high roast scores or questionable outflows,
+    generate Marcus roasts for them, save them to the database, and optionally dispatch
+    the top real roast to Telegram Voice Note + Carrier SMS.
+    """
+    from app.services.roast_engine import score_transaction, generate_roast
+    from app.services.notifier import send_roast
+    from app.services.shield_tv import send_live_toast
+
+    # Find un-roasted outflow transactions in spending buckets (excluding mortgage & internal transfers)
+    result = await db.execute(
+        select(Transaction, Account)
+        .join(Account, Transaction.account_id == Account.id)
+        .where(
+            Transaction.amount < -15.0,
+            Transaction.is_internal_transfer == False,
+            Transaction.id.not_like("TRN-TEST-%"),
+            Account.bucket.in_([BucketType.day_to_day, BucketType.short_term_debt]),
+        )
+        .order_by(Transaction.posted_at.desc())
+    )
+    rows = result.all()
+
+    candidates = []
+    for tx, account in rows:
+        m_name = (tx.merchant_clean or tx.merchant_raw).upper()
+        # Skip mortgage payments, wire transfers, investment settlements
+        if any(skip in m_name for skip in ["MTG", "WIRE", "TRANSFER", "JOURNAL", "PAYROLL"]):
+            continue
+        
+        score = await score_transaction(db, tx, account)
+        tx.roast_score = score
+        candidates.append((tx, account, score))
+
+    # Sort by highest roast score first, then largest purchase amount
+    candidates.sort(key=lambda c: (c[2], abs(float(c[0].amount))), reverse=True)
+
+    roasted_items = []
+    # Roast top 3 real transactions
+    top_candidates = candidates[:3]
+    for idx, (tx, account, score) in enumerate(top_candidates):
+        roast = await generate_roast(db, tx)
+        tx.roast_sent = True
+        await db.commit()
+
+        dispatched = False
+        # Dispatch the #1 highest-priority real roast via Voice Note + SMS
+        if dispatch_latest and idx == 0 and roast:
+            dispatched = await send_roast(tx.id, roast)
+            try:
+                await send_live_toast(f"💸 {roast[:180]}")
+            except Exception:
+                pass
+
+        roasted_items.append({
+            "id": tx.id,
+            "merchant": tx.merchant_clean or tx.merchant_raw,
+            "amount": abs(float(tx.amount)),
+            "card": account.display_name or account.name,
+            "roast": roast,
+            "score": score,
+            "dispatched": dispatched,
+        })
+
+    return {
+        "status": "success",
+        "roasted_count": len(roasted_items),
+        "roasted_items": roasted_items,
+    }

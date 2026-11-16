@@ -243,3 +243,22 @@ export async function triggerTestRoast(payload?: TestRoastPayload): Promise<Test
     body: JSON.stringify(payload || {}),
   });
 }
+
+export async function purgeTestTransactions(): Promise<{ status: string; deleted_count: number }> {
+  return fetchJson<{ status: string; deleted_count: number }>("/api/roast/purge-tests", {
+    method: "POST",
+  });
+}
+
+export async function roastRealPurchases(dispatchLatest = true): Promise<{
+  status: string;
+  roasted_count: number;
+  roasted_items: any[];
+}> {
+  return fetchJson<{ status: string; roasted_count: number; roasted_items: any[] }>(
+    `/api/roast/roast-real?dispatch_latest=${dispatchLatest}`,
+    {
+      method: "POST",
+    }
+  );
+}
