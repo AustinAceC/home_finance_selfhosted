@@ -253,7 +253,7 @@ async def generate_roast(db: AsyncSession, tx: Transaction) -> Optional[str]:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
-            max_tokens=800,
+            max_tokens=2048,
             temperature=0.9,
         )
         roast = response.choices[0].message.content or ""
@@ -302,7 +302,7 @@ async def process_excuse(db: AsyncSession, user_reply: str) -> Optional[str]:
                 {"role": "system", "content": EXCUSE_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=800,
+            max_tokens=2048,
             temperature=0.7,
         )
         raw = response.choices[0].message.content or "{}"

@@ -715,7 +715,7 @@ async def trigger_test_roast(body: TestRoastRequest, db: AsyncSession = Depends(
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
-            max_tokens=800,
+            max_tokens=2048,
             temperature=0.9,
         )
         roast = response.choices[0].message.content or ""
