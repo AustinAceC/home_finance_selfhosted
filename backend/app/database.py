@@ -66,6 +66,9 @@ async def init_db() -> None:
             logger.info(f"Connecting to database (attempt {attempt}/3)...")
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+                # Auto-migrate new columns
+                await conn.execute(text("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS account_role VARCHAR(50) DEFAULT 'general';"))
+                await conn.execute(text("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS low_balance_threshold NUMERIC(12, 2) DEFAULT 500.00;"))
             logger.info("Database initialized successfully.")
             return
         except Exception as e:

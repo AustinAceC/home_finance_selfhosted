@@ -6,6 +6,8 @@ export interface Account {
   name: string;
   custom_name?: string | null;
   bucket: BucketType;
+  account_role?: string | null;
+  low_balance_threshold?: number | null;
   current_balance: number;
   available_balance?: number | null;
   credit_limit?: number | null;
@@ -21,6 +23,56 @@ export interface BucketSummary {
   accounts: Account[];
 }
 
+export interface CheckingAccountDetail {
+  id: string;
+  name: string;
+  custom_name?: string | null;
+  institution: string;
+  account_role: string; // primary_spend, mortgage, bills_subs, general
+  current_balance: number;
+  inflow_30d: number;
+  outflow_30d: number;
+  net_cashflow: number;
+  low_balance_threshold: number;
+  low_balance_alert: boolean;
+  negative_cashflow_alert: boolean;
+  next_bill_amount?: number | null;
+  next_bill_name?: string | null;
+  next_bill_date?: string | null;
+  insufficient_funds_for_bill: boolean;
+  warnings: string[];
+}
+
+export interface BurnRateMetric {
+  monthly_outflow: number;
+  monthly_inflow: number;
+  daily_burn_rate: number;
+  burn_rate_pct: number;
+  safe_daily_spend: number;
+  status: "normal" | "warning" | "critical";
+  status_message: string;
+  days_remaining_in_month: number;
+}
+
+export interface DailyCashflowPoint {
+  date: string;
+  inflow: number;
+  outflow: number;
+  net: number;
+}
+
+export interface BillCalendarItem {
+  id: string;
+  title: string;
+  expected_amount: number;
+  due_date: string;
+  days_until: number;
+  frequency: string;
+  status: "due_today" | "due_soon" | "upcoming";
+  matched_account_id?: string | null;
+  is_funded: boolean;
+}
+
 export interface MetricsSummary {
   day_to_day_balance: number;
   short_term_debt_balance: number;
@@ -31,6 +83,9 @@ export interface MetricsSummary {
   inflow_30d: number;
   outflow_30d: number;
   buckets: BucketSummary[];
+  checking_accounts: CheckingAccountDetail[];
+  burn_rate?: BurnRateMetric | null;
+  cashflow_trend: DailyCashflowPoint[];
 }
 
 export interface Transaction {
@@ -68,7 +123,7 @@ export interface PrivacyStatus {
   guest_privacy_mode: boolean;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://10.10.10.4:8001";
 
 async function fetchJson<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
@@ -78,7 +133,6 @@ async function fetchJson<T>(endpoint: string, options?: RequestInit): Promise<T>
       "Content-Type": "application/json",
       ...(options?.headers || {}),
     },
-    // Next.js cache control - fetch fresh data on client
     cache: "no-store",
   });
 
@@ -92,6 +146,27 @@ async function fetchJson<T>(endpoint: string, options?: RequestInit): Promise<T>
 
 export async function getMetrics(): Promise<MetricsSummary> {
   return fetchJson<MetricsSummary>("/api/metrics/summary");
+}
+
+export async function updateAccount(
+  accountId: string,
+  data: {
+    bucket?: BucketType;
+    custom_name?: string | null;
+    account_role?: string | null;
+    low_balance_threshold?: number | null;
+    statement_due_day?: number | null;
+    include_in_cashflow?: boolean | null;
+  }
+): Promise<Account> {
+  return fetchJson<Account>(`/api/accounts/${accountId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getCalendarBills(): Promise<BillCalendarItem[]> {
+  return fetchJson<BillCalendarItem[]>("/api/calendar/bills");
 }
 
 export interface GetTransactionsParams {

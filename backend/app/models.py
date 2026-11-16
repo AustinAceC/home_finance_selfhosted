@@ -53,6 +53,8 @@ class Account(Base):
     available_balance: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
     credit_limit: Mapped[Optional[float]] = mapped_column(Numeric(12, 2))
     statement_due_day: Mapped[Optional[int]] = mapped_column(Integer)
+    account_role: Mapped[Optional[str]] = mapped_column(String(50), default="general")
+    low_balance_threshold: Mapped[Optional[float]] = mapped_column(Numeric(12, 2), default=500.00)
     include_in_cashflow: Mapped[bool] = mapped_column(Boolean, default=True)
     last_synced_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
