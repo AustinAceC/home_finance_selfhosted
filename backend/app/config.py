@@ -38,6 +38,17 @@ class Settings(BaseSettings):
     TTS_RATE: str = "+0%"
     TTS_PITCH: str = "-0Hz"
 
+    # --- Twilio Live Phone Roasting ---
+    TWILIO_ACCOUNT_SID: Optional[str] = None
+    TWILIO_AUTH_TOKEN: Optional[str] = None
+    TWILIO_FROM_NUMBER: Optional[str] = None
+    TWILIO_TO_NUMBER: Optional[str] = None
+    TWILIO_CALLS_ENABLED: bool = True
+    TWILIO_MIN_ROAST_SCORE: int = 80
+    TWILIO_MAX_CALLS_PER_DAY: int = 5
+    TWILIO_COOLDOWN_MINUTES: int = 30
+    PUBLIC_BASE_URL: Optional[str] = None
+
     # --- Nvidia Shield TV ---
     SHIELD_TV_IP: Optional[str] = None
     SHIELD_LIVE_TOAST_ENABLED: bool = False

@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -645,6 +645,45 @@ async def sms_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     return {"ok": True}
 
 
+@app.post("/api/webhooks/twilio/gather")
+async def twilio_gather_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    """Handles real-time speech responses during live Twilio phone calls."""
+    form = await request.form()
+    speech_result = str(form.get("SpeechResult", "")).strip()
+    logger.info(f"Twilio Live Voice speech detected from caller: {speech_result}")
+
+    if not speech_result:
+        twiml = (
+            '<Response>'
+            '<Say voice="Polly.Matthew">I didn\'t hear anything from you. Check your dashboard and stay on budget. Goodbye.</Say>'
+            '<Hangup/>'
+            '</Response>'
+        )
+        return Response(content=twiml, media_type="application/xml")
+
+    from app.services.roast_engine import process_excuse
+    comeback = await process_excuse(db, speech_result)
+
+    if comeback:
+        twiml = (
+            f'<Response>'
+            f'<Say voice="Polly.Matthew">{comeback}</Say>'
+            f'<Pause length="1"/>'
+            f'<Say voice="Polly.Matthew">I\'ve logged your justification on your dashboard. Do not let me catch you slipping again. Goodbye.</Say>'
+            f'<Hangup/>'
+            f'</Response>'
+        )
+    else:
+        twiml = (
+            '<Response>'
+            '<Say voice="Polly.Matthew">Excuses noted. Now go review your budget. Goodbye.</Say>'
+            '<Hangup/>'
+            '</Response>'
+        )
+
+    return Response(content=twiml, media_type="application/xml")
+
+
 # ---------------------------------------------------------------------------
 # Settings — Privacy Toggle
 # ---------------------------------------------------------------------------
@@ -863,4 +902,31 @@ async def debug_test_voice(text: Optional[str] = None, voice: Optional[str] = No
         "voice_sent": voice_res,
         "audio_sent": audio_res,
         "text_sent": text_res,
+    }
+
+
+@app.post("/api/debug/test-call")
+async def debug_test_call(
+    text: Optional[str] = None,
+    to_number: Optional[str] = None,
+):
+    """Direct test endpoint to trigger an outbound phone call from Marcus via Twilio."""
+    from app.services.twilio_voice import place_marcus_call
+
+    call_text = (
+        text
+        or "Austin! Man, look me in the eye through this phone. You blew eleven hundred dollars at Home Depot while sitting on ninety-three hundred in debt?! Did you lose your whole damn mind?!"
+    )
+
+    success = await place_marcus_call(
+        roast_text=call_text,
+        to_number=to_number,
+    )
+
+    return {
+        "status": "success" if success else "failed",
+        "call_placed": success,
+        "roast_text": call_text,
+        "to_number": to_number or settings.TWILIO_TO_NUMBER,
+        "from_number": settings.TWILIO_FROM_NUMBER,
     }
