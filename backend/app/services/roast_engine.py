@@ -238,17 +238,12 @@ async def generate_roast(db: AsyncSession, tx: Transaction) -> Optional[str]:
     total_debt = await _total_short_term_debt(db)
     safe = await _get_safe_to_spend(db)
 
-    context = {
-        "merchant": tx.merchant_raw,
-        "amount": abs(float(tx.amount)),
-        "account_used": account.display_name,
-        "bucket": account.bucket.value,
-        "merchant_visits_last_30_days": visits_30d,
-        "category_spend_mtd": round(spend_mtd, 2),
-        "total_short_term_cc_debt": round(total_debt, 2),
-        "true_safe_to_spend": round(safe, 2),
-        "triggers_hit": getattr(tx, "_roast_triggers", []),
-    }
+    user_prompt = (
+        f"Roast this user who spent ${abs(float(tx.amount)):.2f} at {tx.merchant_clean or tx.merchant_raw} "
+        f"using their {account.display_name} card. "
+        f"Context: {visits_30d} visits to this merchant in 30 days, total short-term credit card debt is ${total_debt:,.2f}, "
+        f"safe-to-spend is ${safe:,.2f}. Demand an excuse to categorize it."
+    )
 
     client = _get_llm_client()
     try:
@@ -256,9 +251,9 @@ async def generate_roast(db: AsyncSession, tx: Transaction) -> Optional[str]:
             model=settings.LLM_MODEL,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Roast this purchase and demand an excuse: {json.dumps(context)}"},
+                {"role": "user", "content": user_prompt},
             ],
-            max_tokens=200,
+            max_tokens=800,
             temperature=0.9,
         )
         roast = response.choices[0].message.content or ""
@@ -307,7 +302,7 @@ async def process_excuse(db: AsyncSession, user_reply: str) -> Optional[str]:
                 {"role": "system", "content": EXCUSE_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=200,
+            max_tokens=800,
             temperature=0.7,
         )
         raw = response.choices[0].message.content or "{}"

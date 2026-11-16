@@ -701,17 +701,11 @@ async def trigger_test_roast(body: TestRoastRequest, db: AsyncSession = Depends(
     )
     db.add(tx)
 
-    context = {
-        "merchant": merchant,
-        "amount": abs(amount),
-        "account_used": account_display,
-        "bucket": "short_term_debt",
-        "merchant_visits_last_30_days": 4,
-        "category_spend_mtd": 384.50,
-        "total_short_term_cc_debt": 9332.97,
-        "true_safe_to_spend": 8259.30,
-        "triggers_hit": ["Blacklist Merchant", "Debt-Float Violation", "Impulse Spending"],
-    }
+    user_prompt = (
+        f"Roast this user who spent ${abs(amount):.2f} at {merchant} on their {account_display} card. "
+        f"Context: 4 visits this month, total credit card debt is $9,332.97, safe-to-spend is $8,259.30. "
+        f"Demand an excuse to categorize it."
+    )
 
     client = _get_llm_client()
     try:
@@ -719,9 +713,9 @@ async def trigger_test_roast(body: TestRoastRequest, db: AsyncSession = Depends(
             model=settings.LLM_MODEL,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Roast this purchase and demand an excuse: {json.dumps(context)}"},
+                {"role": "user", "content": user_prompt},
             ],
-            max_tokens=200,
+            max_tokens=800,
             temperature=0.9,
         )
         roast = response.choices[0].message.content or ""
