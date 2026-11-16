@@ -89,21 +89,68 @@ async def send_telegram_voice(
         return False
 
 
+async def send_telegram_audio(
+    audio_bytes: bytes,
+    caption: Optional[str] = None,
+    title: str = "Financial Parole Ruling",
+    performer: str = "Marcus",
+    chat_id: Optional[str] = None,
+) -> bool:
+    """
+    Send an MP3 audio track via Telegram Bot API (/sendAudio).
+    Telegram displays this as a full native audio player card with play/pause and progress slider.
+    """
+    token = settings.TELEGRAM_BOT_TOKEN
+    cid = chat_id or settings.TELEGRAM_CHAT_ID
+
+    if not token or not cid or not audio_bytes:
+        return False
+
+    url = f"https://api.telegram.org/bot{token}/sendAudio"
+    files = {
+        "audio": ("marcus_roast.mp3", audio_bytes, "audio/mpeg")
+    }
+    data = {
+        "chat_id": cid,
+        "title": title,
+        "performer": performer,
+    }
+    if caption:
+        data["caption"] = caption[:1024]
+        data["parse_mode"] = "HTML"
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(url, data=data, files=files)
+            response.raise_for_status()
+            logger.info("Telegram audio delivered successfully.")
+            return True
+    except Exception as e:
+        logger.error(f"Telegram audio send failed: {e}")
+        return False
+
+
 async def voice_and_send_telegram(
     text: str,
     header: str = "🗣️ <b>Marcus (Parole Officer):</b>\n\n",
     chat_id: Optional[str] = None,
 ) -> bool:
     """
-    Generate neural speech with edge-tts and deliver as a voice message to Telegram.
-    Falls back to standard text message if audio generation or upload fails.
+    Generate neural speech with edge-tts and deliver as audio + text to Telegram.
+    Tries voice message first, falls back to native audio player, then plain text.
     """
     audio = await generate_speech(text)
     caption = f"{header}{text}"
 
     if audio:
-        sent = await send_telegram_voice(audio, caption=caption, chat_id=chat_id)
-        if sent:
+        # Try voice note first
+        sent_voice = await send_telegram_voice(audio, caption=caption, chat_id=chat_id)
+        if sent_voice:
+            return True
+        
+        # Try audio track if voice note fails
+        sent_audio = await send_telegram_audio(audio, caption=caption, chat_id=chat_id)
+        if sent_audio:
             return True
 
     # Fallback to plain text

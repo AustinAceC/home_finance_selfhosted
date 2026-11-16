@@ -839,3 +839,27 @@ async def roast_real_purchases(
         "roasted_count": len(roasted_items),
         "roasted_items": roasted_items,
     }
+
+
+@app.get("/api/debug/test-voice")
+async def debug_test_voice(text: Optional[str] = None):
+    """Direct test endpoint for Marcus Edge-TTS speech and Telegram delivery."""
+    from app.services.tts import generate_speech
+    from app.services.notifier import send_telegram, send_telegram_voice, send_telegram_audio
+
+    test_text = text or "Hold up! My brother in Christ, this is Marcus checking in on your financial probation. Can you hear me now?"
+    audio = await generate_speech(test_text)
+    caption = f"🗣️ <b>Marcus (Parole Officer Audio Test):</b>\n\n{test_text}"
+
+    voice_res = await send_telegram_voice(audio, caption=caption) if audio else False
+    audio_res = await send_telegram_audio(audio, caption=caption) if audio else False
+    text_res = await send_telegram(caption)
+
+    return {
+        "status": "success",
+        "text": test_text,
+        "audio_bytes": len(audio),
+        "voice_sent": voice_res,
+        "audio_sent": audio_res,
+        "text_sent": text_res,
+    }
