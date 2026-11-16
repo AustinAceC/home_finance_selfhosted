@@ -48,11 +48,16 @@ async def set_state(db: AsyncSession, key: str, value: dict) -> None:
 
 async def claim_setup_token(db: AsyncSession, setup_token: str) -> str:
     """
-    Decode the Base64 setup token, POST to the claim URL once,
+    Decode the Base64 setup token (auto-padding if needed), POST to the claim URL once,
     and store the resulting access URL in app_state.
     Returns the access URL.
     """
-    decoded = base64.b64decode(setup_token).decode("utf-8").strip()
+    token_clean = setup_token.strip(" \"'\r\n")
+    missing_padding = len(token_clean) % 4
+    if missing_padding:
+        token_clean += "=" * (4 - missing_padding)
+
+    decoded = base64.b64decode(token_clean).decode("utf-8").strip()
     claim_url = decoded  # The decoded value IS the claim URL
 
     async with httpx.AsyncClient(timeout=30) as client:
