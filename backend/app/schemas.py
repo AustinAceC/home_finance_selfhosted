@@ -209,3 +209,23 @@ class PrivacyToggleRequest(BaseModel):
 
 class PrivacyToggleResponse(BaseModel):
     guest_privacy_mode: bool
+
+
+# ---------------------------------------------------------------------------
+# Test Roast Schemas
+# ---------------------------------------------------------------------------
+
+class TestRoastRequest(BaseModel):
+    merchant: Optional[str] = "OnlyFans.com"
+    amount: Optional[float] = 79.99
+    card_name: Optional[str] = "Discover (3263)"
+    send_telegram: bool = True
+
+
+class TestRoastResponse(BaseModel):
+    status: str
+    transaction_id: str
+    merchant: str
+    amount: float
+    roast: str
+    telegram_sent: bool

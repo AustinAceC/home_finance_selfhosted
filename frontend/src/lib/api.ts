@@ -220,3 +220,26 @@ export async function togglePrivacy(enabled: boolean): Promise<PrivacyStatus> {
     body: JSON.stringify({ enabled }),
   });
 }
+
+export interface TestRoastPayload {
+  merchant?: string;
+  amount?: number;
+  card_name?: string;
+  send_telegram?: boolean;
+}
+
+export interface TestRoastResponse {
+  status: string;
+  transaction_id: string;
+  merchant: string;
+  amount: number;
+  roast: string;
+  telegram_sent: boolean;
+}
+
+export async function triggerTestRoast(payload?: TestRoastPayload): Promise<TestRoastResponse> {
+  return fetchJson<TestRoastResponse>("/api/roast/test", {
+    method: "POST",
+    body: JSON.stringify(payload || {}),
+  });
+}

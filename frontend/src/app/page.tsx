@@ -9,6 +9,7 @@ import {
   getCalendarBills,
   updateAccount,
   triggerSync,
+  triggerTestRoast,
   MetricsSummary,
   Transaction,
   RecurringSchedule,
@@ -75,6 +76,25 @@ export default function DashboardPage() {
   const [editThreshold, setEditThreshold] = useState<number>(500);
   const [editIncludeCashflow, setEditIncludeCashflow] = useState<boolean>(true);
   const [isSavingAccount, setIsSavingAccount] = useState<boolean>(false);
+  const [testingRoast, setTestingRoast] = useState<boolean>(false);
+
+  const handleTestRoast = async () => {
+    setTestingRoast(true);
+    try {
+      const res = await triggerTestRoast({
+        merchant: "OnlyFans.com",
+        amount: 89.99,
+        card_name: "Discover (3263)",
+        send_telegram: true,
+      });
+      setSyncFeedback(`🔥 Test Roast Sent to Telegram! "${res.roast.slice(0, 90)}..."`);
+      await loadData();
+    } catch (err: any) {
+      alert("Failed to trigger test roast: " + err.message);
+    } finally {
+      setTestingRoast(false);
+    }
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -802,14 +822,25 @@ export default function DashboardPage() {
 
       {/* Wall of Shame: Recent AI Roasts */}
       <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center space-x-2">
             <Flame className="w-5 h-5 text-orange-500" />
             <h2 className="text-lg font-bold tracking-tight text-white">
               AI Roast Bot — Recent Disciplinary Actions
             </h2>
           </div>
-          <span className="text-xs font-mono text-zinc-500">Two-Way Telegram Loop</span>
+          <div className="flex items-center space-x-3">
+            <span className="text-xs font-mono text-zinc-500 hidden sm:inline">Two-Way Telegram Loop</span>
+            <button
+              onClick={handleTestRoast}
+              disabled={testingRoast}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 text-xs font-mono transition-all disabled:opacity-50"
+              title="Simulate a suspicious purchase and trigger an instant AI roast to Telegram"
+            >
+              <Sparkles className={`w-3.5 h-3.5 ${testingRoast ? "animate-spin" : ""}`} />
+              <span>{testingRoast ? "Roasting..." : "🧪 Test Sus Purchase"}</span>
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

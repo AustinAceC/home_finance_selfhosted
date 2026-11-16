@@ -32,6 +32,8 @@ from app.schemas import (
     RecurringScheduleOut,
     SMSWebhook,
     TelegramUpdate,
+    TestRoastRequest,
+    TestRoastResponse,
     TransactionOut,
 )
 from app.worker import start_scheduler, stop_scheduler
@@ -44,6 +46,53 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Background Telegram Polling Loop (Inbound Excuses without Public Webhook)
+# ---------------------------------------------------------------------------
+
+async def telegram_long_poll():
+    """Long-polls Telegram getUpdates so user excuses work without a public webhook URL."""
+    import httpx
+    import asyncio
+    from app.services.roast_engine import process_excuse
+    from app.services.notifier import send_telegram
+
+    token = settings.TELEGRAM_BOT_TOKEN
+    if not token:
+        logger.info("Telegram polling skipped (no token).")
+        return
+
+    logger.info("Starting Telegram long-polling for user excuses...")
+    offset = None
+    while True:
+        try:
+            url = f"https://api.telegram.org/bot{token}/getUpdates"
+            params = {"timeout": 20}
+            if offset is not None:
+                params["offset"] = offset
+
+            async with httpx.AsyncClient(timeout=30) as client:
+                r = await client.get(url, params=params)
+                if r.status_code == 200:
+                    data = r.json()
+                    for item in data.get("result", []):
+                        offset = item["update_id"] + 1
+                        msg = item.get("message")
+                        if msg and msg.get("text"):
+                            text = msg["text"].strip()
+                            chat_id = str(msg["chat"]["id"])
+                            logger.info(f"Received Telegram reply: '{text}' from chat {chat_id}")
+                            async with AsyncSessionLocal() as db:
+                                comeback = await process_excuse(db, text)
+                                if comeback:
+                                    await send_telegram(f"⚖️ <b>Parole Officer Ruling:</b>\n\n{comeback}", chat_id=chat_id)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.debug(f"Telegram poll tick: {e}")
+            await asyncio.sleep(5)
+
+
+# ---------------------------------------------------------------------------
 # Lifespan
 # ---------------------------------------------------------------------------
 
@@ -52,7 +101,9 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Finance Roast App backend...")
     await init_db()
     start_scheduler()
+    poll_task = asyncio.create_task(telegram_long_poll())
     yield
+    poll_task.cancel()
     stop_scheduler()
     logger.info("Backend shutdown complete.")
 
@@ -605,3 +656,95 @@ async def get_privacy(db: AsyncSession = Depends(get_db)):
     state = await get_state(db, "guest_privacy_mode")
     enabled = state.get("enabled", False) if state else False
     return PrivacyToggleResponse(guest_privacy_mode=enabled)
+
+
+# ---------------------------------------------------------------------------
+# Test Roast Endpoint
+# ---------------------------------------------------------------------------
+
+@app.post("/api/roast/test", response_model=TestRoastResponse)
+async def trigger_test_roast(body: TestRoastRequest, db: AsyncSession = Depends(get_db)):
+    """Simulate a suspicious purchase, generate an AI roast via Gemini, and dispatch to Telegram."""
+    from app.services.roast_engine import _get_llm_client, SYSTEM_PROMPT
+    from app.services.notifier import send_roast
+    from app.services.shield_tv import send_live_toast
+    import uuid
+    import json
+
+    acc_q = await db.execute(
+        select(Account).where(Account.bucket.in_([BucketType.day_to_day, BucketType.short_term_debt]))
+    )
+    accounts = acc_q.scalars().all()
+    selected_acct = accounts[0] if accounts else None
+    account_id = selected_acct.id if selected_acct else "TEST_ACCT"
+    account_display = body.card_name or (selected_acct.display_name if selected_acct else "Credit Card")
+
+    test_tx_id = f"TRN-TEST-{uuid.uuid4().hex[:8]}"
+    amount = -abs(body.amount or 79.99)
+    merchant = body.merchant or "OnlyFans.com"
+
+    tx = Transaction(
+        id=test_tx_id,
+        account_id=account_id,
+        posted_at=datetime.now(timezone.utc),
+        transacted_at=datetime.now(timezone.utc),
+        amount=amount,
+        merchant_raw=merchant,
+        merchant_clean=merchant,
+        category="Bullshit Impulse",
+        is_pending=False,
+        is_internal_transfer=False,
+        is_recurring=False,
+        roast_score=95,
+        roast_sent=True,
+    )
+    db.add(tx)
+
+    context = {
+        "merchant": merchant,
+        "amount": abs(amount),
+        "account_used": account_display,
+        "bucket": "short_term_debt",
+        "merchant_visits_last_30_days": 4,
+        "category_spend_mtd": 384.50,
+        "total_short_term_cc_debt": 9332.97,
+        "true_safe_to_spend": 8259.30,
+        "triggers_hit": ["Blacklist Merchant", "Debt-Float Violation", "Impulse Spending"],
+    }
+
+    client = _get_llm_client()
+    try:
+        response = await client.chat.completions.create(
+            model=settings.LLM_MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": json.dumps(context)},
+            ],
+            max_tokens=200,
+            temperature=0.9,
+        )
+        roast = response.choices[0].message.content or ""
+    except Exception as e:
+        logger.error(f"Test roast LLM generation failed: {e}")
+        roast = f"What in the hell are you doing spending ${abs(amount):.2f} at {merchant} on {account_display}?! You're already carrying debt. What is your excuse?!"
+
+    tx.roast_message = roast[:1000]
+    await db.commit()
+
+    telegram_sent = False
+    if body.send_telegram:
+        telegram_sent = await send_roast(tx.id, roast)
+
+    try:
+        await send_live_toast(f"💸 {roast[:180]}")
+    except Exception:
+        pass
+
+    return TestRoastResponse(
+        status="success",
+        transaction_id=tx.id,
+        merchant=merchant,
+        amount=abs(amount),
+        roast=roast,
+        telegram_sent=telegram_sent,
+    )
