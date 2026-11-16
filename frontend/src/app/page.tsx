@@ -45,6 +45,7 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   Tooltip,
@@ -52,6 +53,7 @@ import {
   Legend,
   AreaChart,
   Area,
+  ReferenceLine,
 } from "recharts";
 
 export default function DashboardPage() {
@@ -188,6 +190,12 @@ export default function DashboardPage() {
 
   const safeToSpend = metrics?.true_safe_to_spend ?? 0;
   const burnRate = metrics?.burn_rate;
+  const burnTrend = metrics?.daily_burn_trend || [];
+  const avg14dSpend =
+    burnTrend.length > 0
+      ? burnTrend.reduce((sum, p) => sum + p.actual_spend, 0) / burnTrend.length
+      : 0;
+  const overLimitDays = burnTrend.filter((p) => p.is_over_limit).length;
 
   return (
     <div className="min-h-screen bg-black text-white selection:bg-[#00ff88]/30 font-sans p-4 md:p-8 space-y-8">
@@ -553,94 +561,244 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* 14-Day Cashflow History Chart & Upcoming Bills Calendar */}
+      {/* 14-Day Financial Velocity & Cashflow Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Cashflow Trend Graph */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base font-bold text-white flex items-center space-x-2">
-              <TrendingUp className="w-4 h-4 text-[#00ff88]" />
-              <span>14-Day Cashflow History</span>
-            </h3>
-            <span className="text-xs font-mono text-zinc-500">Daily Inflows vs Outflows</span>
-          </div>
-
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={metrics?.cashflow_trend || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#222" />
-                <XAxis dataKey="date" stroke="#666" fontSize={10} tickLine={false} />
-                <YAxis stroke="#666" fontSize={10} tickLine={false} tickFormatter={(v) => `$${v}`} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "#000", borderColor: "#333", fontSize: "12px", fontFamily: "monospace" }}
-                  formatter={(val: any) => formatCurrency(Number(val))}
-                />
-                <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "10px" }} />
-                <Bar dataKey="inflow" name="Inflow (+)" fill="#00ff88" radius={[2, 2, 0, 0]} />
-                <Bar dataKey="outflow" name="Outflow (-)" fill="#ff4444" radius={[2, 2, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Upcoming Bills Calendar */}
+        {/* Daily Burn Rate vs. Safe Speed Limit Chart */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-bold text-white flex items-center space-x-2">
-                <CalendarIcon className="w-4 h-4 text-amber-400" />
-                <span>Upcoming Bills & Pay Dates</span>
-              </h3>
-              <span className="text-xs font-mono text-zinc-500">45-Day Timeline</span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-zinc-800/80 gap-2 mb-4">
+              <div className="flex items-center space-x-2">
+                <Flame className="w-5 h-5 text-orange-400" />
+                <h3 className="text-base font-bold text-white">Daily Burn Rate vs. Speed Limit</h3>
+              </div>
+              <div className="flex items-center space-x-3 text-[11px] font-mono">
+                <span className="flex items-center gap-1 text-[#00ff88]">
+                  <span className="w-2 h-2 rounded-full bg-[#00ff88]" />
+                  Safe
+                </span>
+                <span className="flex items-center gap-1 text-[#ff4444]">
+                  <span className="w-2 h-2 rounded-full bg-[#ff4444]" />
+                  Over Cap
+                </span>
+                <span className="flex items-center gap-1 text-[#ffcc00]">
+                  <span className="w-2.5 h-0.5 bg-[#ffcc00]" />
+                  Limit
+                </span>
+              </div>
             </div>
 
-            <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
-              {bills.map((bill) => {
-                const isDueSoon = bill.days_until <= 3;
-                return (
-                  <div
-                    key={bill.id}
-                    className={`p-3 rounded-lg border text-xs flex items-center justify-between ${
-                      isDueSoon
-                        ? "bg-amber-500/10 border-amber-500/30 text-amber-200"
-                        : "bg-black/50 border-zinc-800/80 text-zinc-300"
-                    }`}
-                  >
-                    <div>
-                      <span className="font-bold block text-white text-sm">{bill.title}</span>
-                      <span className="text-[11px] text-zinc-400 font-mono">
-                        Due {bill.due_date} ({bill.frequency})
-                      </span>
-                    </div>
+            {/* Quick Stat Highlights */}
+            <div className="grid grid-cols-3 gap-2 mb-4 bg-black/60 border border-zinc-900 p-2.5 rounded-lg text-xs font-mono">
+              <div>
+                <span className="text-[10px] text-zinc-500 block uppercase">Speed Limit</span>
+                <span className="text-[#ffcc00] font-bold">
+                  {formatCurrency(burnRate?.safe_daily_spend ?? 0)}/d
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-zinc-500 block uppercase">14d Avg Spend</span>
+                <span className="text-zinc-200 font-bold">
+                  {formatCurrency(avg14dSpend)}/d
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-zinc-500 block uppercase">Violations</span>
+                <span className={overLimitDays > 0 ? "text-[#ff4444] font-bold" : "text-[#00ff88] font-bold"}>
+                  {overLimitDays} of {burnTrend.length} days
+                </span>
+              </div>
+            </div>
 
-                    <div className="text-right">
-                      <span className="font-mono font-bold text-sm block">
-                        {formatCurrency(bill.expected_amount)}
-                      </span>
-                      <span
-                        className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-medium ${
-                          isDueSoon ? "bg-amber-500/30 text-amber-300" : "bg-zinc-800 text-zinc-400"
-                        }`}
-                      >
-                        {bill.days_until === 0
-                          ? "DUE TODAY"
-                          : bill.days_until === 1
-                          ? "TOMORROW"
-                          : `in ${bill.days_until} days`}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-              {bills.length === 0 && (
-                <p className="text-xs text-zinc-500 italic py-6 text-center">
-                  No upcoming bills detected yet. As recurring charges clear, SimpleFIN will populate them.
-                </p>
-              )}
+            <div className="h-64 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={burnTrend} margin={{ top: 12, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
+                  <XAxis dataKey="date" stroke="#666" fontSize={10} tickLine={false} />
+                  <YAxis stroke="#666" fontSize={10} tickLine={false} tickFormatter={(v) => `$${v}`} />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload || !payload.length) return null;
+                      const d = payload[0].payload;
+                      return (
+                        <div className="bg-black/95 border border-zinc-700 p-3 rounded-lg text-xs font-mono shadow-2xl">
+                          <p className="text-zinc-400 font-bold mb-1">{d.date}</p>
+                          <p className="text-white flex items-center justify-between gap-4">
+                            <span>Actual Spend:</span>
+                            <span className={d.is_over_limit ? "text-[#ff4444] font-bold" : "text-[#00ff88] font-bold"}>
+                              {formatCurrency(d.actual_spend)}
+                            </span>
+                          </p>
+                          <p className="text-zinc-400 flex items-center justify-between gap-4">
+                            <span>Safe Speed Limit:</span>
+                            <span className="text-[#ffcc00] font-bold">{formatCurrency(d.safe_limit)}</span>
+                          </p>
+                          <p className={`mt-1.5 pt-1.5 border-t border-zinc-800 text-[11px] font-bold ${
+                            d.is_over_limit ? "text-[#ff4444]" : "text-[#00ff88]"
+                          }`}>
+                            {d.is_over_limit
+                              ? `⚠️ Exceeded limit by ${formatCurrency(d.actual_spend - d.safe_limit)}`
+                              : "✓ Disciplined (Under Daily Limit)"}
+                          </p>
+                        </div>
+                      );
+                    }}
+                  />
+                  {burnRate?.safe_daily_spend && burnRate.safe_daily_spend > 0 && (
+                    <ReferenceLine
+                      y={burnRate.safe_daily_spend}
+                      stroke="#ffcc00"
+                      strokeDasharray="4 4"
+                      strokeWidth={1.5}
+                      label={{
+                        value: `Limit: $${Math.round(burnRate.safe_daily_spend)}/d`,
+                        fill: "#ffcc00",
+                        position: "top",
+                        fontSize: 10,
+                        fontFamily: "monospace",
+                      }}
+                    />
+                  )}
+                  <Bar dataKey="actual_spend" name="Daily Spend" radius={[3, 3, 0, 0]}>
+                    {burnTrend.map((entry, idx) => (
+                      <Cell
+                        key={`burn-cell-${idx}`}
+                        fill={entry.is_over_limit ? "#ff4444" : "#00ff88"}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
+          <p className="text-[11px] text-zinc-500 font-mono mt-3">
+            Spike days (e.g. mortgage, rent, or bulk orders) highlight in red. Days below your daily allowance show in green.
+          </p>
+        </div>
+
+        {/* 14-Day Cashflow History Chart */}
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-800/80 mb-4">
+              <div className="flex items-center space-x-2">
+                <TrendingUp className="w-4 h-4 text-[#00ff88]" />
+                <h3 className="text-base font-bold text-white">14-Day Cashflow History</h3>
+              </div>
+              <span className="text-xs font-mono text-zinc-500">Inflows vs Outflows</span>
+            </div>
+
+            {/* Quick Stat Highlights for Cashflow */}
+            <div className="grid grid-cols-3 gap-2 mb-4 bg-black/60 border border-zinc-900 p-2.5 rounded-lg text-xs font-mono">
+              <div>
+                <span className="text-[10px] text-zinc-500 block uppercase">14d Inflow</span>
+                <span className="text-emerald-400 font-bold">
+                  +{formatCurrency((metrics?.cashflow_trend || []).reduce((s, c) => s + c.inflow, 0))}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-zinc-500 block uppercase">14d Outflow</span>
+                <span className="text-rose-400 font-bold">
+                  -{formatCurrency((metrics?.cashflow_trend || []).reduce((s, c) => s + c.outflow, 0))}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-zinc-500 block uppercase">14d Net</span>
+                {(() => {
+                  const net14 = (metrics?.cashflow_trend || []).reduce((s, c) => s + c.net, 0);
+                  return (
+                    <span className={`font-bold ${net14 >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                      {formatCurrency(net14)}
+                    </span>
+                  );
+                })()}
+              </div>
+            </div>
+
+            <div className="h-64 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={metrics?.cashflow_trend || []} margin={{ top: 12, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
+                  <XAxis dataKey="date" stroke="#666" fontSize={10} tickLine={false} />
+                  <YAxis stroke="#666" fontSize={10} tickLine={false} tickFormatter={(v) => `$${v}`} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "#000", borderColor: "#333", fontSize: "12px", fontFamily: "monospace" }}
+                    formatter={(val: any) => formatCurrency(Number(val))}
+                  />
+                  <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "10px" }} />
+                  <Bar dataKey="inflow" name="Inflow (+)" fill="#00ff88" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="outflow" name="Outflow (-)" fill="#ff4444" radius={[2, 2, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          <p className="text-[11px] text-zinc-500 font-mono mt-3">
+            Tracks total money entering and leaving your accounts day-by-day.
+          </p>
         </div>
       </div>
+
+      {/* Upcoming Bills Calendar */}
+      <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <CalendarIcon className="w-5 h-5 text-amber-400" />
+            <h2 className="text-lg font-bold tracking-tight text-white">
+              Upcoming Bills & Pay Dates
+            </h2>
+          </div>
+          <span className="text-xs font-mono text-zinc-500">
+            {bills.length} Schedules Active · 45-Day Timeline
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {bills.map((bill) => {
+            const isDueSoon = bill.days_until <= 3;
+            return (
+              <div
+                key={bill.id}
+                className={`p-3.5 rounded-lg border text-xs flex items-center justify-between transition-all ${
+                  isDueSoon
+                    ? "bg-amber-500/10 border-amber-500/40 text-amber-200"
+                    : "bg-black/60 border-zinc-800/80 text-zinc-300 hover:border-zinc-700"
+                }`}
+              >
+                <div className="truncate pr-3">
+                  <span className="font-bold block text-white text-sm truncate">{bill.title}</span>
+                  <span className="text-[11px] text-zinc-400 font-mono">
+                    Due {bill.due_date} ({bill.frequency})
+                  </span>
+                </div>
+
+                <div className="text-right flex-shrink-0">
+                  <span className="font-mono font-bold text-sm block text-white">
+                    {formatCurrency(bill.expected_amount)}
+                  </span>
+                  <span
+                    className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase inline-block mt-0.5 ${
+                      bill.days_until === 0
+                        ? "bg-rose-500/30 text-rose-300 border border-rose-500/40"
+                        : bill.days_until === 1
+                        ? "bg-amber-500/30 text-amber-300 border border-amber-500/40"
+                        : "bg-zinc-800 text-zinc-400"
+                    }`}
+                  >
+                    {bill.days_until === 0
+                      ? "DUE TODAY"
+                      : bill.days_until === 1
+                      ? "TOMORROW"
+                      : `in ${bill.days_until} days`}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+          {bills.length === 0 && (
+            <p className="col-span-full text-xs text-zinc-500 italic py-8 text-center font-mono">
+              No upcoming bills detected yet. As recurring charges clear, SimpleFIN will populate them.
+            </p>
+          )}
+        </div>
+      </section>
 
       {/* Wall of Shame: Recent AI Roasts */}
       <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 space-y-4">

@@ -124,6 +124,14 @@ class DailyCashflowPoint(BaseModel):
     net: float
 
 
+class DailyBurnPoint(BaseModel):
+    date: str
+    actual_spend: float
+    safe_limit: float
+    cumulative_spend: float
+    is_over_limit: bool
+
+
 class BillCalendarItem(BaseModel):
     id: str
     title: str
@@ -160,6 +168,7 @@ class MetricsSummary(BaseModel):
     checking_accounts: list[CheckingAccountDetail] = []
     burn_rate: Optional[BurnRateMetric] = None
     cashflow_trend: list[DailyCashflowPoint] = []
+    daily_burn_trend: list[DailyBurnPoint] = []
 
 
 # ---------------------------------------------------------------------------

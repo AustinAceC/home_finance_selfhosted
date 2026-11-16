@@ -61,6 +61,14 @@ export interface DailyCashflowPoint {
   net: number;
 }
 
+export interface DailyBurnPoint {
+  date: string;
+  actual_spend: number;
+  safe_limit: number;
+  cumulative_spend: number;
+  is_over_limit: boolean;
+}
+
 export interface BillCalendarItem {
   id: string;
   title: string;
@@ -86,6 +94,7 @@ export interface MetricsSummary {
   checking_accounts: CheckingAccountDetail[];
   burn_rate?: BurnRateMetric | null;
   cashflow_trend: DailyCashflowPoint[];
+  daily_burn_trend?: DailyBurnPoint[];
 }
 
 export interface Transaction {

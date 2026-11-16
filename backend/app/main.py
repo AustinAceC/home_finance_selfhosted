@@ -25,6 +25,7 @@ from app.schemas import (
     ClaimSimpleFinRequest,
     ClaimSimpleFinResponse,
     DailyCashflowPoint,
+    DailyBurnPoint,
     MetricsSummary,
     PrivacyToggleRequest,
     PrivacyToggleResponse,
@@ -344,6 +345,34 @@ async def get_metrics_summary(db: AsyncSession = Depends(get_db)):
             net=round(din_val - dout_val, 2),
         ))
 
+    # 8. Daily Burn Rate Trend (last 14 days)
+    daily_burn_trend: list[DailyBurnPoint] = []
+    running_cumulative = 0.0
+    safe_limit_val = max(safe_daily, 0.0)
+
+    for i in range(13, -1, -1):
+        day_date = (now - timedelta(days=i)).date()
+        day_start = datetime(day_date.year, day_date.month, day_date.day, 0, 0, 0, tzinfo=timezone.utc)
+        day_end = day_start + timedelta(days=1)
+
+        d_out = await db.execute(
+            select(func.sum(Transaction.amount)).where(
+                Transaction.amount < 0,
+                Transaction.is_internal_transfer == False,
+                Transaction.posted_at >= day_start,
+                Transaction.posted_at < day_end,
+            )
+        )
+        spend_val = abs(float(d_out.scalar() or 0))
+        running_cumulative += spend_val
+        daily_burn_trend.append(DailyBurnPoint(
+            date=day_date.strftime("%b %d"),
+            actual_spend=round(spend_val, 2),
+            safe_limit=round(safe_limit_val, 2),
+            cumulative_spend=round(running_cumulative, 2),
+            is_over_limit=(spend_val > safe_limit_val and safe_limit_val > 0),
+        ))
+
     return MetricsSummary(
         day_to_day_balance=round(day_to_day, 2),
         short_term_debt_balance=round(short_term_debt, 2),
@@ -357,6 +386,7 @@ async def get_metrics_summary(db: AsyncSession = Depends(get_db)):
         checking_accounts=checking_details,
         burn_rate=burn_metric,
         cashflow_trend=cashflow_trend,
+        daily_burn_trend=daily_burn_trend,
     )
 
 

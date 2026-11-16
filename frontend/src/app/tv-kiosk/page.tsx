@@ -24,6 +24,16 @@ import {
   Sparkles,
   AlertTriangle,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ReferenceLine,
+} from "recharts";
 
 function KioskContent() {
   const searchParams = useSearchParams();
@@ -109,7 +119,7 @@ function KioskContent() {
 
       if (elapsed >= slideDuration) {
         elapsed = 0;
-        setCurrentSlide((prev) => (prev + 1) % 4);
+        setCurrentSlide((prev) => (prev + 1) % 5);
         setProgress(0);
       }
     }, tickInterval);
@@ -252,8 +262,131 @@ function KioskContent() {
             </div>
           )}
 
-          {/* SLIDE 1: 3 Dedicated Checking Accounts Radar */}
+          {/* SLIDE 1: Daily Burn Rate & Velocity Radar */}
           {currentSlide === 1 && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="flex items-center justify-between pb-3 border-b border-zinc-900">
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl">🔥</span>
+                  <h2 className="text-3xl font-extrabold tracking-wide text-white">
+                    Daily Burn Velocity Radar
+                  </h2>
+                </div>
+                <div className="flex items-center gap-4 text-xs font-mono">
+                  <span className="flex items-center gap-1.5 text-[#00ff88]">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#00ff88]" />
+                    SAFE DAILY PACE
+                  </span>
+                  <span className="flex items-center gap-1.5 text-[#ff4444]">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#ff4444]" />
+                    OVER SPEED LIMIT
+                  </span>
+                  <span className="flex items-center gap-1.5 text-[#ffcc00]">
+                    <span className="w-3 h-0.5 bg-[#ffcc00]" />
+                    SPEED LIMIT
+                  </span>
+                </div>
+              </div>
+
+              {/* 4 Top KPI Stat Cards for TV */}
+              <div className="grid grid-cols-4 gap-6">
+                <div className="bg-black border border-zinc-900 rounded-2xl p-5">
+                  <div className="text-xs uppercase font-mono text-zinc-500 mb-1">
+                    Safe Speed Limit
+                  </div>
+                  <div className="text-3xl font-mono font-black text-[#ffcc00]">
+                    {displayAmount(burnRate?.safe_daily_spend ?? 0)}/d
+                  </div>
+                  <div className="text-[11px] text-zinc-600 font-mono mt-1">
+                    Target max spend per day
+                  </div>
+                </div>
+
+                <div className="bg-black border border-zinc-900 rounded-2xl p-5">
+                  <div className="text-xs uppercase font-mono text-zinc-500 mb-1">
+                    14-Day Avg Spend
+                  </div>
+                  <div className="text-3xl font-mono font-black text-white">
+                    {displayAmount(
+                      (metrics?.daily_burn_trend || []).length > 0
+                        ? (metrics?.daily_burn_trend || []).reduce((s, p) => s + p.actual_spend, 0) /
+                          (metrics?.daily_burn_trend || []).length
+                        : 0
+                    )}/d
+                  </div>
+                  <div className="text-[11px] text-zinc-600 font-mono mt-1">
+                    Actual average outflow
+                  </div>
+                </div>
+
+                <div className="bg-black border border-zinc-900 rounded-2xl p-5">
+                  <div className="text-xs uppercase font-mono text-zinc-500 mb-1">
+                    Monthly Pace
+                  </div>
+                  <div className="text-3xl font-mono font-black text-white">
+                    {burnRate?.burn_rate_pct ?? 0}%
+                  </div>
+                  <div className="text-[11px] text-[#00ff88] font-mono mt-1 uppercase font-bold">
+                    {burnRate?.status ?? "Normal"} Status
+                  </div>
+                </div>
+
+                <div className="bg-black border border-zinc-900 rounded-2xl p-5">
+                  <div className="text-xs uppercase font-mono text-zinc-500 mb-1">
+                    Spike Days
+                  </div>
+                  {(() => {
+                    const overDays = (metrics?.daily_burn_trend || []).filter((p) => p.is_over_limit).length;
+                    return (
+                      <div className={`text-3xl font-mono font-black ${overDays > 0 ? "text-[#ff4444]" : "text-[#00ff88]"}`}>
+                        {overDays} of {(metrics?.daily_burn_trend || []).length}
+                      </div>
+                    );
+                  })()}
+                  <div className="text-[11px] text-zinc-600 font-mono mt-1">
+                    Days exceeding speed limit
+                  </div>
+                </div>
+              </div>
+
+              {/* Full-Width TV Bar Chart */}
+              <div className="bg-black border border-zinc-900 rounded-2xl p-6 h-[320px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={metrics?.daily_burn_trend || []} margin={{ top: 15, right: 20, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1c1c1c" vertical={false} />
+                    <XAxis dataKey="date" stroke="#666" fontSize={13} tickLine={false} fontFamily="monospace" />
+                    <YAxis stroke="#666" fontSize={13} tickLine={false} tickFormatter={(v) => `$${v}`} fontFamily="monospace" />
+                    {burnRate?.safe_daily_spend && burnRate.safe_daily_spend > 0 && (
+                      <ReferenceLine
+                        y={burnRate.safe_daily_spend}
+                        stroke="#ffcc00"
+                        strokeDasharray="5 5"
+                        strokeWidth={2}
+                        label={{
+                          value: `SPEED LIMIT ($${Math.round(burnRate.safe_daily_spend)}/DAY)`,
+                          fill: "#ffcc00",
+                          position: "top",
+                          fontSize: 12,
+                          fontFamily: "monospace",
+                        }}
+                      />
+                    )}
+                    <Bar dataKey="actual_spend" name="Daily Outflow" radius={[4, 4, 0, 0]}>
+                      {(metrics?.daily_burn_trend || []).map((entry, idx) => (
+                        <Cell
+                          key={`tv-cell-${idx}`}
+                          fill={entry.is_over_limit ? "#ff4444" : "#00ff88"}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {/* SLIDE 2: 3 Dedicated Checking Accounts Radar */}
+          {currentSlide === 2 && (
             <div className="space-y-6 animate-fadeIn">
               <div className="flex items-center justify-between pb-3 border-b border-zinc-900">
                 <div className="flex items-center gap-3">
@@ -335,8 +468,8 @@ function KioskContent() {
             </div>
           )}
 
-          {/* SLIDE 2: Wall of Shame (AI Roasts) */}
-          {currentSlide === 2 && (
+          {/* SLIDE 3: Wall of Shame (AI Roasts) */}
+          {currentSlide === 3 && (
             <div className="space-y-6 animate-fadeIn">
               <div className="flex items-center justify-between pb-3 border-b border-zinc-900">
                 <div className="flex items-center gap-3">
@@ -389,8 +522,8 @@ function KioskContent() {
             </div>
           )}
 
-          {/* SLIDE 3: Upcoming 45-Day Bills Calendar Radar */}
-          {currentSlide === 3 && (
+          {/* SLIDE 4: Upcoming 45-Day Bills Calendar Radar */}
+          {currentSlide === 4 && (
             <div className="space-y-6 animate-fadeIn">
               <div className="flex items-center justify-between pb-3 border-b border-zinc-900">
                 <div className="flex items-center gap-3">
@@ -456,19 +589,23 @@ function KioskContent() {
           <div className="flex items-center justify-between text-xs font-mono text-zinc-600 mb-3">
             <div className="flex items-center gap-4">
               <span className={currentSlide === 0 ? "text-[#00ff88] font-bold" : ""}>
-                1. 4-BUCKETS & BURN
+                1. 4-BUCKETS
               </span>
               <span>•</span>
-              <span className={currentSlide === 1 ? "text-[#4488ff] font-bold" : ""}>
-                2. CHECKING RADAR
+              <span className={currentSlide === 1 ? "text-orange-400 font-bold" : ""}>
+                2. BURN GRAPH
               </span>
               <span>•</span>
-              <span className={currentSlide === 2 ? "text-[#ffcc00] font-bold" : ""}>
-                3. WALL OF SHAME
+              <span className={currentSlide === 2 ? "text-[#4488ff] font-bold" : ""}>
+                3. CHECKING RADAR
               </span>
               <span>•</span>
-              <span className={currentSlide === 3 ? "text-purple-400 font-bold" : ""}>
-                4. BILLS CALENDAR
+              <span className={currentSlide === 3 ? "text-[#ffcc00] font-bold" : ""}>
+                4. WALL OF SHAME
+              </span>
+              <span>•</span>
+              <span className={currentSlide === 4 ? "text-purple-400 font-bold" : ""}>
+                5. BILLS CALENDAR
               </span>
             </div>
 
