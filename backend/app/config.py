@@ -33,10 +33,10 @@ class Settings(BaseSettings):
     SMTP_PASS: Optional[str] = None
     SMS_GATEWAY_EMAIL: Optional[str] = None
 
-    # --- Text-to-Speech (Edge-TTS) ---
-    TTS_VOICE: str = "en-US-ChristopherNeural"  # Deep, resonant, authoritative male voice
-    TTS_RATE: str = "+6%"                       # Slightly faster, energetic natural delivery
-    TTS_PITCH: str = "-2Hz"                     # Deep commanding timbre
+    # --- Text-to-Speech (Gemini TTS) ---
+    TTS_VOICE: str = "Fenrir"                   # High-energy, expressive, deep male voice (options: Fenrir, Charon, Orus, Gacrux, Algenib)
+    TTS_RATE: str = "+0%"
+    TTS_PITCH: str = "-0Hz"
 
     # --- Nvidia Shield TV ---
     SHIELD_TV_IP: Optional[str] = None

@@ -67,9 +67,13 @@ async def send_telegram_voice(
         logger.warning("Telegram voice note missing token, chat_id, or audio.")
         return False
 
+    is_wav = audio_bytes[:4] == b"RIFF"
+    filename = "marcus_roast.wav" if is_wav else "marcus_roast.mp3"
+    mime = "audio/wav" if is_wav else "audio/mpeg"
+
     url = f"https://api.telegram.org/bot{token}/sendVoice"
     files = {
-        "voice": ("marcus_roast.mp3", audio_bytes, "audio/mpeg")
+        "voice": (filename, audio_bytes, mime)
     }
     data = {
         "chat_id": cid,
@@ -97,7 +101,7 @@ async def send_telegram_audio(
     chat_id: Optional[str] = None,
 ) -> bool:
     """
-    Send an MP3 audio track via Telegram Bot API (/sendAudio).
+    Send an audio track via Telegram Bot API (/sendAudio).
     Telegram displays this as a full native audio player card with play/pause and progress slider.
     """
     token = settings.TELEGRAM_BOT_TOKEN
@@ -106,9 +110,13 @@ async def send_telegram_audio(
     if not token or not cid or not audio_bytes:
         return False
 
+    is_wav = audio_bytes[:4] == b"RIFF"
+    filename = "marcus_roast.wav" if is_wav else "marcus_roast.mp3"
+    mime = "audio/wav" if is_wav else "audio/mpeg"
+
     url = f"https://api.telegram.org/bot{token}/sendAudio"
     files = {
-        "audio": ("marcus_roast.mp3", audio_bytes, "audio/mpeg")
+        "audio": (filename, audio_bytes, mime)
     }
     data = {
         "chat_id": cid,
@@ -133,27 +141,25 @@ async def send_telegram_audio(
 async def voice_and_send_telegram(
     text: str,
     header: str = "🗣️ <b>Marcus (Parole Officer):</b>\n\n",
+    voice: Optional[str] = None,
     chat_id: Optional[str] = None,
 ) -> bool:
     """
-    Generate neural speech with edge-tts and deliver as audio + text to Telegram.
+    Generate speech with Gemini TTS and deliver as audio + text to Telegram.
     Tries voice message first, falls back to native audio player, then plain text.
     """
-    audio = await generate_speech(text)
+    audio = await generate_speech(text, voice=voice)
     caption = f"{header}{text}"
 
     if audio:
-        # Try voice note first
         sent_voice = await send_telegram_voice(audio, caption=caption, chat_id=chat_id)
         if sent_voice:
             return True
-        
-        # Try audio track if voice note fails
+
         sent_audio = await send_telegram_audio(audio, caption=caption, chat_id=chat_id)
         if sent_audio:
             return True
 
-    # Fallback to plain text
     return await send_telegram(caption, chat_id=chat_id)
 
 
@@ -217,38 +223,22 @@ async def send_sms_via_email(message: str) -> bool:
 
 async def notify(message: str) -> bool:
     """
-    Send a basic notification using available drivers.
-    Priority: Telegram -> SMS-via-email
+    Send a basic notification to Telegram.
     """
-    tg_success = False
     if settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_CHAT_ID:
-        tg_success = await send_telegram(message)
-
-    sms_success = False
-    if settings.SMS_GATEWAY_EMAIL:
-        sms_success = await send_sms_via_email(message)
-
-    return tg_success or sms_success
+        return await send_telegram(message)
+    return False
 
 
-async def send_roast(tx_id: str, roast_message: str) -> bool:
+async def send_roast(tx_id: str, roast_message: str, voice: Optional[str] = None) -> bool:
     """
     High-level roast dispatcher:
-      1. Generates neural speech and delivers a voice note + transcription to Telegram.
-      2. If carrier SMS is configured, sends a real SMS text to the user's phone.
+    Generates expressive speech with Gemini TTS and delivers a voice note + transcription to Telegram.
     """
-    # 1. Telegram delivery (Voice Memo + Text)
-    tg_success = False
     if settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_CHAT_ID:
-        tg_success = await voice_and_send_telegram(
+        return await voice_and_send_telegram(
             text=roast_message,
             header="🗣️ <b>Marcus (Parole Officer):</b>\n\n",
+            voice=voice,
         )
-
-    # 2. Real SMS delivery (via Carrier Email Gateway)
-    sms_success = False
-    if settings.SMS_GATEWAY_EMAIL:
-        sms_text = f"Marcus (Parole Officer): {roast_message}"
-        sms_success = await send_sms_via_email(sms_text)
-
-    return tg_success or sms_success
+    return False
