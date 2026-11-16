@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     SMS_GATEWAY_EMAIL: Optional[str] = None
 
     # --- Text-to-Speech (Gemini TTS) ---
-    TTS_VOICE: str = "Fenrir"                   # High-energy, expressive, deep male voice (options: Fenrir, Charon, Orus, Gacrux, Algenib)
+    TTS_VOICE: str = "Charon"                   # Deep, resonant, authoritative African American officer tone (Charon)
     TTS_RATE: str = "+0%"
     TTS_PITCH: str = "-0Hz"
 
