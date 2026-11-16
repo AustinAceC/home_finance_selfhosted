@@ -6,6 +6,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # --- Database ---
+    POSTGRES_USER: str = "finance"
+    POSTGRES_PASSWORD: str = ""
+    POSTGRES_DB: str = "finance_db"
+    POSTGRES_HOST: str = "db"
+    POSTGRES_PORT: int = 5432
     DATABASE_URL: str = "postgresql+asyncpg://finance:finance@db:5432/finance_db"
 
     # --- SimpleFIN ---
