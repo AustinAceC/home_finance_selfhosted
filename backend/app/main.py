@@ -1,6 +1,7 @@
 """
 FastAPI entrypoint — all routes, webhooks, and app lifecycle.
 """
+import asyncio
 import calendar
 import logging
 from contextlib import asynccontextmanager
@@ -13,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.database import get_db, init_db
+from app.database import AsyncSessionLocal, get_db, init_db
 from app.models import Account, BucketType, RecurringSchedule, Transaction
 from app.schemas import (
     AccountBase,
