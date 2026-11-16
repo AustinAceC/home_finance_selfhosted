@@ -96,7 +96,7 @@ async def send_telegram_voice(
 async def send_telegram_audio(
     audio_bytes: bytes,
     caption: Optional[str] = None,
-    title: str = "Financial Parole Ruling",
+    title: str = "Marcus Financial Planning Review",
     performer: str = "Marcus",
     chat_id: Optional[str] = None,
 ) -> bool:
@@ -140,7 +140,7 @@ async def send_telegram_audio(
 
 async def voice_and_send_telegram(
     text: str,
-    header: str = "🗣️ <b>Marcus (Parole Officer):</b>\n\n",
+    header: str = "🗣️ <b>Marcus (Financial Planner):</b>\n\n",
     voice: Optional[str] = None,
     chat_id: Optional[str] = None,
 ) -> bool:
@@ -238,7 +238,7 @@ async def send_roast(tx_id: str, roast_message: str, voice: Optional[str] = None
     if settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_CHAT_ID:
         return await voice_and_send_telegram(
             text=roast_message,
-            header="🗣️ <b>Marcus (Parole Officer):</b>\n\n",
+            header="🗣️ <b>Marcus (Financial Planner):</b>\n\n",
             voice=voice,
         )
     return False

@@ -57,7 +57,7 @@ async def push_roast_overlay(roast_message: str) -> bool:
     if not settings.SHIELD_TV_IP:
         return False
 
-    text = f"🤖 Financial Parole Officer: {roast_message}"
+    text = f"🤖 Financial Planner (Marcus): {roast_message}"
     return await _post_aerial_message(slot=2, text=text[:500])
 
 

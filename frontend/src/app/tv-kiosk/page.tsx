@@ -477,7 +477,7 @@ function KioskContent() {
                   <h2 className="text-3xl font-extrabold tracking-wide text-white">Wall of Shame</h2>
                 </div>
                 <div className="text-xs font-mono text-zinc-500 uppercase">
-                  Marcus — AI Financial Parole Officer
+                  Marcus — AI Financial Planner
                 </div>
               </div>
 

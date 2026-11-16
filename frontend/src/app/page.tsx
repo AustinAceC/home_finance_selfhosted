@@ -262,7 +262,7 @@ export default function DashboardPage() {
             </span>
           </div>
           <p className="text-xs text-zinc-400 font-mono mt-1">
-            4-Bucket Core · Cashflow Radar · Live AI Parole Officer
+            4-Bucket Core · Cashflow Radar · Live AI Financial Planner (Marcus)
           </p>
         </div>
 
@@ -857,7 +857,7 @@ export default function DashboardPage() {
           <div className="flex items-center space-x-2">
             <Flame className="w-5 h-5 text-orange-500" />
             <h2 className="text-lg font-bold tracking-tight text-white">
-              Marcus — AI Financial Parole Officer
+              Marcus — AI Financial Planner
             </h2>
           </div>
           <div className="flex items-center space-x-2 sm:space-x-3">

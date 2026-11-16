@@ -88,7 +88,7 @@ async def telegram_long_poll():
                                     from app.services.notifier import voice_and_send_telegram
                                     await voice_and_send_telegram(
                                         comeback,
-                                        header="⚖️ <b>Marcus (Parole Officer Ruling):</b>\n\n",
+                                        header="⚖️ <b>Marcus (Financial Planner Ruling):</b>\n\n",
                                         chat_id=chat_id,
                                     )
         except asyncio.CancelledError:
@@ -847,9 +847,9 @@ async def debug_test_voice(text: Optional[str] = None, voice: Optional[str] = No
     from app.services.tts import generate_speech
     from app.services.notifier import send_telegram, send_telegram_voice, send_telegram_audio
 
-    test_text = text or "Hold up! My brother in Christ, this is Marcus checking in on your financial probation. Can you hear me now?"
+    test_text = text or "Hold up! My brother in Christ, this is Marcus, your personal financial planner checking in on your budget. Can you hear me now?"
     audio = await generate_speech(test_text, voice=voice)
-    caption = f"🗣️ <b>Marcus (Parole Officer Audio Test):</b>\n\n{test_text}"
+    caption = f"🗣️ <b>Marcus (Financial Planner Audio Test):</b>\n\n{test_text}"
 
     voice_res = await send_telegram_voice(audio, caption=caption) if audio else False
     audio_res = await send_telegram_audio(audio, caption=caption) if audio else False
