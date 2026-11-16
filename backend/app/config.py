@@ -39,6 +39,7 @@ class Settings(BaseSettings):
 
     # --- App Behavior ---
     SYNC_INTERVAL_HOURS: int = 4
+    SYNC_DAYS: int = 60
     DEBT_ALERT_THRESHOLD: float = 1500.0
     SAFE_TO_SPEND_ALERT_THRESHOLD: float = 500.0
     TIMEZONE: str = "America/Los_Angeles"

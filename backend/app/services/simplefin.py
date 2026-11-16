@@ -125,7 +125,7 @@ async def sync_accounts(db: AsyncSession) -> dict:
     if not access_url:
         raise ValueError("SimpleFIN access URL not configured. Call /api/setup/claim-simplefin first.")
 
-    start_ts = int((datetime.now(timezone.utc) - timedelta(days=14)).timestamp())
+    start_ts = int((datetime.now(timezone.utc) - timedelta(days=settings.SYNC_DAYS)).timestamp())
     accounts_url = f"{access_url}/accounts?start-date={start_ts}"
 
     async with httpx.AsyncClient(timeout=60) as client:
