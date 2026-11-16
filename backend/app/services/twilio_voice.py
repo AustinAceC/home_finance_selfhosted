@@ -10,6 +10,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlencode
+from xml.sax.saxutils import escape as xml_escape
 
 import httpx
 
@@ -77,13 +78,14 @@ async def place_marcus_call(
         return False
 
     # Build TwiML instructions
+    safe_roast = xml_escape(roast_text)
     # If a public webhook URL is configured, use <Gather> to listen for the excuse
     if settings.PUBLIC_BASE_URL:
         action_url = f"{settings.PUBLIC_BASE_URL.rstrip('/')}/api/webhooks/twilio/gather"
         twiml = (
             f'<Response>'
             f'<Gather input="speech" action="{action_url}" method="POST" speechTimeout="auto" timeout="6">'
-            f'<Say voice="Polly.Matthew">{roast_text}</Say>'
+            f'<Say voice="Polly.Matthew">{safe_roast}</Say>'
             f'<Pause length="1"/>'
             f'<Say voice="Polly.Matthew">I am listening. What is your excuse, Austin?</Say>'
             f'</Gather>'
@@ -94,7 +96,7 @@ async def place_marcus_call(
         # Standalone call without public webhook
         twiml = (
             f'<Response>'
-            f'<Say voice="Polly.Matthew">{roast_text}</Say>'
+            f'<Say voice="Polly.Matthew">{safe_roast}</Say>'
             f'<Pause length="1"/>'
             f'<Say voice="Polly.Matthew">Check your dashboard and get your budget under control. Goodbye.</Say>'
             f'</Response>'
