@@ -230,31 +230,15 @@ async def notify(message: str) -> bool:
     return False
 
 
-async def send_roast(
-    tx_id: str,
-    roast_message: str,
-    voice: Optional[str] = None,
-    allow_call: bool = True,
-) -> bool:
+async def send_roast(tx_id: str, roast_message: str, voice: Optional[str] = None) -> bool:
     """
     High-level roast dispatcher:
-    1. Generates expressive speech with Gemini TTS and delivers a voice note to Telegram.
-    2. If Twilio voice calling is enabled and configured, triggers a live phone call from Marcus.
+    Generates expressive speech with Gemini TTS and delivers a voice note + transcription to Telegram.
     """
-    tg_success = False
     if settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_CHAT_ID:
-        tg_success = await voice_and_send_telegram(
+        return await voice_and_send_telegram(
             text=roast_message,
             header="🗣️ <b>Marcus (Financial Planner):</b>\n\n",
             voice=voice,
         )
-
-    # 2. Twilio Outbound Phone Call
-    if allow_call and settings.TWILIO_CALLS_ENABLED and settings.TWILIO_FROM_NUMBER:
-        try:
-            from app.services.twilio_voice import place_marcus_call
-            await place_marcus_call(roast_text=roast_message)
-        except Exception as e:
-            logger.error(f"Failed to place Twilio call in send_roast: {e}")
-
-    return tg_success
+    return False
