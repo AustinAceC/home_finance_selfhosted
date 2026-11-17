@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   getMetrics,
   getTransactions,
-  getRecurring,
   getCalendarBills,
   updateAccount,
   triggerSync,
@@ -14,9 +13,7 @@ import {
   roastRealPurchases,
   MetricsSummary,
   Transaction,
-  RecurringSchedule,
   BillCalendarItem,
-  CheckingAccountDetail,
   Account,
   BucketType,
 } from "@/lib/api";
@@ -28,22 +25,19 @@ import {
   CreditCard,
   PiggyBank,
   TrendingUp,
-  AlertTriangle,
+  AlertCircle,
   Flame,
   Calendar as CalendarIcon,
   CheckCircle2,
   Clock,
   ArrowUpRight,
   ArrowDownRight,
-  ShieldAlert,
   Settings2,
-  Check,
   X,
-  Gauge,
-  Home,
-  Receipt,
   Sparkles,
   Trash2,
+  ChevronRight,
+  ShieldCheck,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -55,8 +49,6 @@ import {
   Tooltip,
   CartesianGrid,
   Legend,
-  AreaChart,
-  Area,
   ReferenceLine,
 } from "recharts";
 
@@ -69,7 +61,6 @@ export default function DashboardPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<string>("");
-  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
 
   // Account editing modal state
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
@@ -90,7 +81,7 @@ export default function DashboardPage() {
         card_name: "Discover (3263)",
         send_telegram: true,
       });
-      setSyncFeedback(`🔥 Test Roast Sent to Telegram! "${res.roast.slice(0, 90)}..."`);
+      setSyncFeedback(`Test roast sent to Telegram: "${res.roast.slice(0, 80)}..."`);
       await loadData();
     } catch (err: any) {
       alert("Failed to trigger test roast: " + err.message);
@@ -102,7 +93,7 @@ export default function DashboardPage() {
   const handlePurgeTests = async () => {
     try {
       const res = await purgeTestTransactions();
-      setSyncFeedback(`🧹 Removed ${res.deleted_count} test transactions.`);
+      setSyncFeedback(`Purged ${res.deleted_count} test items.`);
       await loadData();
     } catch (err: any) {
       alert("Failed to purge test messages: " + err.message);
@@ -115,9 +106,9 @@ export default function DashboardPage() {
       await purgeTestTransactions();
       const res = await roastRealPurchases(true);
       if (res.roasted_count > 0) {
-        setSyncFeedback(`🔥 Marcus roasted ${res.roasted_count} real purchases and sent the top one to your phone & Telegram!`);
+        setSyncFeedback(`Marcus evaluated ${res.roasted_count} transactions and dispatched the top highlight.`);
       } else {
-        setSyncFeedback("No un-roasted suspicious real purchases found.");
+        setSyncFeedback("No un-reviewed candidate transactions found.");
       }
       await loadData();
     } catch (err: any) {
@@ -134,7 +125,7 @@ export default function DashboardPage() {
           console.warn("Metrics fetch error:", err);
           return null;
         }),
-        getTransactions({ roast_sent: true, limit: 5 }).catch((err) => {
+        getTransactions({ roast_sent: true, limit: 6 }).catch((err) => {
           console.warn("Roasts fetch error:", err);
           return [];
         }),
@@ -149,7 +140,6 @@ export default function DashboardPage() {
       }
       setRoasts(roastsData || []);
       setBills(billsData || []);
-      setLastRefreshed(new Date());
     } catch (e) {
       console.error("Dashboard data load error:", e);
     } finally {
@@ -168,7 +158,6 @@ export default function DashboardPage() {
           day: "numeric",
           hour: "2-digit",
           minute: "2-digit",
-          second: "2-digit",
         })
       );
     };
@@ -189,7 +178,7 @@ export default function DashboardPage() {
     setSyncFeedback(null);
     try {
       const res = await triggerSync();
-      setSyncFeedback(res.message || "Sync queued!");
+      setSyncFeedback(res.message || "Financial sync triggered");
       setTimeout(() => {
         loadData();
       }, 3500);
@@ -232,9 +221,9 @@ export default function DashboardPage() {
 
   if (!mounted || loading) {
     return (
-      <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center space-y-4">
-        <RefreshCw className="h-8 w-8 text-[#00ff88] animate-spin" />
-        <p className="text-zinc-400 font-mono text-sm">Loading Financial Command Center...</p>
+      <div className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col items-center justify-center space-y-3">
+        <RefreshCw className="h-6 w-6 text-emerald-400 animate-spin" />
+        <p className="text-zinc-400 text-sm font-medium tracking-wide">Loading workspace...</p>
       </div>
     );
   }
@@ -249,792 +238,751 @@ export default function DashboardPage() {
   const overLimitDays = burnTrend.filter((p) => p.is_over_limit).length;
 
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-[#00ff88]/30 font-sans p-4 md:p-8 space-y-8">
-      {/* Top Header Bar */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-zinc-800 gap-4">
-        <div>
+    <div className="min-h-screen bg-[#09090b] text-zinc-100 font-sans selection:bg-emerald-500/20 selection:text-emerald-300">
+      {/* Top Header */}
+      <header className="border-b border-white/[0.08] bg-[#09090b]/80 backdrop-blur-md sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <span className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
-              <span className="text-[#00ff88]">💸</span> FINANCE HQ
-            </span>
-            <span className="bg-zinc-900 border border-zinc-700/80 text-zinc-300 text-xs px-2.5 py-0.5 rounded-full font-mono">
-              Self-Hosted Coolify
-            </span>
-          </div>
-          <p className="text-xs text-zinc-400 font-mono mt-1">
-            4-Bucket Core · Cashflow Radar · Live AI Financial Planner (Marcus)
-          </p>
-        </div>
-
-        <div className="flex items-center flex-wrap gap-3">
-          <div className="text-xs text-zinc-400 font-mono bg-zinc-900/80 px-3 py-1.5 rounded-md border border-zinc-800 flex items-center space-x-2">
-            <Clock className="w-3.5 h-3.5 text-zinc-400" />
-            <span>{currentTime || "Live"}</span>
+            <div className="h-8 w-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="text-base font-semibold tracking-tight text-white">Finance Command</span>
+              <span className="hidden sm:inline-block text-xs text-zinc-400 ml-2 font-normal">
+                Cashflow Radar & AI Guidance
+              </span>
+            </div>
           </div>
 
-          <Link
-            href="/tv-kiosk"
-            target="_blank"
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-[#4488ff] border border-[#4488ff]/40 hover:border-[#4488ff] transition-colors"
-          >
-            <Tv className="w-3.5 h-3.5" />
-            <span>Shield TV Kiosk</span>
-          </Link>
+          <div className="flex items-center space-x-3">
+            <div className="hidden sm:flex items-center text-xs text-zinc-400 bg-white/[0.03] px-3 py-1.5 rounded-lg border border-white/[0.06] space-x-2">
+              <Clock className="w-3.5 h-3.5 text-zinc-500" />
+              <span>{currentTime}</span>
+            </div>
 
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="flex items-center space-x-1.5 px-4 py-1.5 rounded-md text-xs font-semibold bg-[#00ff88] hover:bg-[#00e077] text-black transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(0,255,136,0.3)] hover:shadow-[0_0_20px_rgba(0,255,136,0.5)]"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
-            <span>{syncing ? "Syncing..." : "Sync Now"}</span>
-          </button>
+            <Link
+              href="/tv-kiosk"
+              target="_blank"
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-300 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition-all"
+            >
+              <Tv className="w-3.5 h-3.5 text-zinc-400" />
+              <span>Shield TV</span>
+            </Link>
+
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500 hover:bg-emerald-400 text-zinc-950 transition-all shadow-sm disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
+              <span>{syncing ? "Syncing..." : "Sync"}</span>
+            </button>
+          </div>
         </div>
       </header>
 
-      {syncFeedback && (
-        <div className="bg-[#00ff88]/10 border border-[#00ff88]/40 text-[#00ff88] px-4 py-2.5 rounded-lg text-xs font-mono flex items-center space-x-2 animate-fade-in">
-          <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-          <span>{syncFeedback}</span>
-        </div>
-      )}
+      {/* Main Content Container */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+        {syncFeedback && (
+          <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 px-4 py-3 rounded-xl text-xs font-medium flex items-center space-x-2.5 transition-all">
+            <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
+            <span>{syncFeedback}</span>
+          </div>
+        )}
 
-      {/* Hero Section: Safe-to-Spend & Burn Rate Gauge */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Safe-to-Spend Hero */}
-        <div className="lg:col-span-2 relative overflow-hidden rounded-xl border border-zinc-800 bg-gradient-to-br from-zinc-900/90 via-black to-zinc-950 p-6 md:p-8">
-          <div className="absolute top-0 right-0 w-80 h-80 bg-[#00ff88]/5 rounded-full blur-3xl pointer-events-none" />
+        {/* Hero Section: True Safe-to-Spend & Burn Velocity */}
+        <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Safe-to-Spend Primary Card */}
+          <div className="lg:col-span-2 relative overflow-hidden rounded-2xl border border-white/[0.08] bg-gradient-to-b from-white/[0.04] to-transparent p-6 sm:p-8 flex flex-col justify-between">
+            <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/[0.03] rounded-full blur-3xl pointer-events-none" />
 
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <div className="flex items-center space-x-2 text-xs font-mono uppercase tracking-wider text-zinc-400">
-                <span className="w-2 h-2 rounded-full bg-[#00ff88] animate-pulse" />
-                <span>True Safe-to-Spend</span>
+              <div className="flex items-center space-x-2 text-xs font-medium text-zinc-400">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-subtle-pulse" />
+                <span>Liquid Spendable Cashflow</span>
               </div>
-              <div
-                className={`text-4xl sm:text-6xl font-black font-mono tracking-tight my-2 ${
-                  safeToSpend >= 0 ? "text-[#00ff88]" : "text-[#ff4444]"
-                }`}
-              >
-                {formatCurrency(safeToSpend)}
+              <div className="mt-3 flex items-baseline space-x-3">
+                <h1
+                  className={`text-4xl sm:text-6xl font-semibold tracking-tight font-mono ${
+                    safeToSpend >= 0 ? "text-emerald-400" : "text-rose-400"
+                  }`}
+                >
+                  {formatCurrency(safeToSpend)}
+                </h1>
               </div>
-              <p className="text-xs text-zinc-400 max-w-md">
-                Remaining liquid checking cash after paying off every credit card to $0.00 and
-                covering all scheduled bills due in the next 14 days.
+              <p className="text-sm text-zinc-400 mt-2 max-w-lg leading-relaxed">
+                Liquid checking cash remaining after settling all credit card balances to zero and reserving for scheduled obligations over the next 14 days.
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-4 md:pt-0 border-t md:border-t-0 border-zinc-800/80">
-              <div className="bg-black/60 border border-zinc-800 p-3 rounded-lg">
-                <span className="text-[10px] font-mono text-zinc-500 uppercase block">Card Float</span>
-                <span className="text-base font-bold font-mono text-[#ff4444]">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-6 mt-6 border-t border-white/[0.06]">
+              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                <span className="text-xs text-zinc-400 block font-medium">Card Float</span>
+                <span className="text-sm font-semibold font-mono text-rose-400 mt-0.5 block">
                   {formatCurrency(metrics?.short_term_debt_balance ?? 0)}
                 </span>
               </div>
-              <div className="bg-black/60 border border-zinc-800 p-3 rounded-lg">
-                <span className="text-[10px] font-mono text-zinc-500 uppercase block">14d Bills Due</span>
-                <span className="text-base font-bold font-mono text-[#ffcc00]">
+              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                <span className="text-xs text-zinc-400 block font-medium">14-Day Bills</span>
+                <span className="text-sm font-semibold font-mono text-amber-300 mt-0.5 block">
                   {formatCurrency(metrics?.upcoming_bills_14d ?? 0)}
                 </span>
               </div>
-              <div className="bg-black/60 border border-zinc-800 p-3 rounded-lg">
-                <span className="text-[10px] font-mono text-zinc-500 uppercase block">30d Inflow</span>
-                <span className="text-base font-bold font-mono text-emerald-400">
+              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                <span className="text-xs text-zinc-400 block font-medium">30-Day Inflow</span>
+                <span className="text-sm font-semibold font-mono text-emerald-400 mt-0.5 block">
                   +{formatCurrency(metrics?.inflow_30d ?? 0)}
                 </span>
               </div>
-              <div className="bg-black/60 border border-zinc-800 p-3 rounded-lg">
-                <span className="text-[10px] font-mono text-zinc-500 uppercase block">30d Outflow</span>
-                <span className="text-base font-bold font-mono text-rose-400">
+              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                <span className="text-xs text-zinc-400 block font-medium">30-Day Outflow</span>
+                <span className="text-sm font-semibold font-mono text-zinc-300 mt-0.5 block">
                   -{formatCurrency(metrics?.outflow_30d ?? 0)}
                 </span>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Burn Rate Velocity Card */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-mono uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-                <Flame className="w-4 h-4 text-orange-400" />
-                <span>Burn Rate Velocity</span>
-              </span>
-              <span
-                className={`text-[11px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
-                  burnRate?.status === "critical"
-                    ? "bg-rose-500/20 text-rose-400 border border-rose-500/30"
-                    : burnRate?.status === "warning"
-                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                    : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                }`}
-              >
-                {burnRate?.status ?? "Normal"}
-              </span>
-            </div>
-
-            <div className="flex items-baseline space-x-2 my-2">
-              <span className="text-4xl font-extrabold font-mono text-white">
-                {burnRate?.burn_rate_pct ?? 0}%
-              </span>
-              <span className="text-xs text-zinc-400 font-mono">of 30-day income</span>
-            </div>
-
-            {/* Visual Progress Bar */}
-            <div className="w-full bg-zinc-800 h-2.5 rounded-full overflow-hidden my-3">
-              <div
-                className={`h-full transition-all duration-500 ${
-                  (burnRate?.burn_rate_pct ?? 0) > 100
-                    ? "bg-rose-500"
-                    : (burnRate?.burn_rate_pct ?? 0) > 80
-                    ? "bg-amber-400"
-                    : "bg-[#00ff88]"
-                }`}
-                style={{ width: `${Math.min(burnRate?.burn_rate_pct ?? 0, 100)}%` }}
-              />
-            </div>
-
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              {burnRate?.status_message || "Monitoring daily spending pace against monthly cash inflow."}
-            </p>
-          </div>
-
-          <div className="pt-4 border-t border-zinc-800/80 flex items-center justify-between text-xs font-mono">
-            <span className="text-zinc-500">Safe Daily Pace:</span>
-            <span className="font-bold text-[#00ff88]">
-              {formatCurrency(burnRate?.safe_daily_spend ?? 0)} / day
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* 3 Dedicated Checking Accounts Cashflow Radar */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Wallet className="w-5 h-5 text-[#00ff88]" />
-            <h2 className="text-lg font-bold tracking-tight text-white">
-              Checking Accounts & Dedicated Cashflow Radar
-            </h2>
-          </div>
-          <span className="text-xs text-zinc-400 font-mono">
-            Direct Deposits · Mortgage Escrow · Utilities & Subs
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {(metrics?.checking_accounts || []).map((acct) => {
-            const isPrimary = acct.account_role === "primary_spend";
-            const isMortgage = acct.account_role === "mortgage";
-            const isBills = acct.account_role === "bills_subs";
-
-            let roleLabel = "General Checking";
-            let roleColor = "border-zinc-800";
-            if (isPrimary) {
-              roleLabel = "💳 Primary Spend & CC Payoff";
-              roleColor = "border-[#00ff88]/40";
-            } else if (isMortgage) {
-              roleLabel = "🏡 Mortgage & Work Deposits";
-              roleColor = "border-[#4488ff]/40";
-            } else if (isBills) {
-              roleLabel = "📑 Utilities & Subscriptions";
-              roleColor = "border-amber-500/40";
-            }
-
-            return (
-              <div
-                key={acct.id}
-                className={`bg-zinc-950 border ${roleColor} rounded-xl p-5 flex flex-col justify-between relative group hover:border-zinc-700 transition-all`}
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-300 font-medium">
-                      {roleLabel}
-                    </span>
-                    <button
-                      onClick={() => {
-                        const raw = metrics?.buckets
-                          ?.flatMap((b) => b.accounts)
-                          .find((a) => a.id === acct.id);
-                        if (raw) openEditModal(raw);
-                      }}
-                      className="text-zinc-500 hover:text-white transition-colors"
-                      title="Configure Account"
-                    >
-                      <Settings2 className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <h3 className="font-semibold text-white text-base truncate">
-                    {acct.custom_name || acct.name}
-                  </h3>
-                  <p className="text-xs text-zinc-400 font-mono mb-3">{acct.institution}</p>
-
-                  <div className="text-3xl font-black font-mono text-white mb-4">
-                    {formatCurrency(acct.current_balance)}
-                  </div>
-
-                  {/* Cashflow In/Out 30d */}
-                  <div className="grid grid-cols-3 gap-2 bg-black/50 border border-zinc-900 p-2.5 rounded-lg text-xs font-mono mb-3">
-                    <div>
-                      <span className="text-[10px] text-zinc-500 block">30d In</span>
-                      <span className="text-emerald-400 font-bold">+{formatCurrency(acct.inflow_30d)}</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-zinc-500 block">30d Out</span>
-                      <span className="text-rose-400 font-bold">-{formatCurrency(acct.outflow_30d)}</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-zinc-500 block">Net</span>
-                      <span
-                        className={`font-bold ${
-                          acct.net_cashflow >= 0 ? "text-emerald-400" : "text-rose-400"
-                        }`}
-                      >
-                        {formatCurrency(acct.net_cashflow)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Warnings & Alerts */}
-                  {acct.warnings.length > 0 && (
-                    <div className="space-y-1.5 my-3">
-                      {acct.warnings.map((w, idx) => (
-                        <div
-                          key={idx}
-                          className="text-[11px] font-mono flex items-center space-x-1.5 bg-rose-500/10 text-rose-300 border border-rose-500/20 px-2 py-1 rounded"
-                        >
-                          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 text-rose-400" />
-                          <span>{w}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="pt-3 border-t border-zinc-900 flex items-center justify-between text-[11px] font-mono text-zinc-500">
-                  <span>Threshold Buffer:</span>
-                  <span className="text-zinc-300 font-bold">
-                    {formatCurrency(acct.low_balance_threshold)}
-                  </span>
-                </div>
+          {/* Burn Velocity Card */}
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6 sm:p-7 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-zinc-400 flex items-center gap-1.5">
+                  <Flame className="w-3.5 h-3.5 text-amber-400" />
+                  Monthly Outflow Pace
+                </span>
+                <span
+                  className={`text-[11px] font-medium px-2 py-0.5 rounded-full capitalize ${
+                    burnRate?.status === "critical"
+                      ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                      : burnRate?.status === "warning"
+                      ? "bg-amber-500/10 text-amber-300 border border-amber-500/20"
+                      : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                  }`}
+                >
+                  {burnRate?.status ?? "Normal"}
+                </span>
               </div>
-            );
-          })}
-        </div>
-      </section>
 
-      {/* 4 Primary Core Buckets Grid */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold tracking-tight text-white">4 Strict Financial Buckets</h2>
-          <span className="text-xs text-zinc-400 font-mono">
-            Click ⚙️ on any account to reclassify or customize
-          </span>
-        </div>
+              <div className="mt-4 flex items-baseline space-x-2">
+                <span className="text-3xl font-semibold font-mono text-white">
+                  {burnRate?.burn_rate_pct ?? 0}%
+                </span>
+                <span className="text-xs text-zinc-400">of 30-day income consumed</span>
+              </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {(metrics?.buckets || []).map((b) => {
-            let label = "Day-to-Day Checking";
-            let color = "text-[#00ff88]";
-            let border = "border-zinc-800";
-            let icon = <Wallet className="w-4 h-4 text-[#00ff88]" />;
+              {/* Minimalist Progress Meter */}
+              <div className="w-full bg-white/[0.06] h-1.5 rounded-full overflow-hidden mt-4">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    (burnRate?.burn_rate_pct ?? 0) > 100
+                      ? "bg-rose-500"
+                      : (burnRate?.burn_rate_pct ?? 0) > 80
+                      ? "bg-amber-400"
+                      : "bg-emerald-400"
+                  }`}
+                  style={{ width: `${Math.min(burnRate?.burn_rate_pct ?? 0, 100)}%` }}
+                />
+              </div>
 
-            if (b.bucket === "short_term_debt") {
-              label = "Short-Term Debt";
-              color = "text-[#ff4444]";
-              icon = <CreditCard className="w-4 h-4 text-[#ff4444]" />;
-            } else if (b.bucket === "savings") {
-              label = "Savings / Reserves";
-              color = "text-[#4488ff]";
-              icon = <PiggyBank className="w-4 h-4 text-[#4488ff]" />;
-            } else if (b.bucket === "retirement") {
-              label = "Retirement & Investments";
-              color = "text-purple-400";
-              icon = <TrendingUp className="w-4 h-4 text-purple-400" />;
-            }
+              <p className="text-xs text-zinc-400 mt-4 leading-relaxed">
+                {burnRate?.status_message || "Monitoring current burn against scheduled income and standard baseline."}
+              </p>
+            </div>
 
-            return (
-              <div
-                key={b.bucket}
-                className={`bg-zinc-950 border ${border} rounded-xl p-5 flex flex-col justify-between`}
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-mono text-zinc-400 flex items-center space-x-1.5">
-                      {icon}
-                      <span>{label}</span>
-                    </span>
-                    <span className="text-xs font-mono text-zinc-500">{b.account_count} accts</span>
-                  </div>
+            <div className="pt-4 border-t border-white/[0.06] flex items-center justify-between text-xs">
+              <span className="text-zinc-400">Safe Daily Limit:</span>
+              <span className="font-semibold font-mono text-emerald-400">
+                {formatCurrency(burnRate?.safe_daily_spend ?? 0)} / day
+              </span>
+            </div>
+          </div>
+        </section>
 
-                  <div className={`text-2xl font-black font-mono my-2 ${color}`}>
-                    {formatCurrency(b.total_balance)}
-                  </div>
+        {/* Dedicated Checking Accounts Cashflow Radar */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-white">Checking Accounts & Allocation</h2>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Segregated balances for daily spending, recurring commitments, and payroll
+              </p>
+            </div>
+          </div>
 
-                  <div className="space-y-2 mt-4 max-h-56 overflow-y-auto pr-1">
-                    {b.accounts.map((acct) => (
-                      <div
-                        key={acct.id}
-                        className="bg-black/40 border border-zinc-900 rounded p-2 text-xs flex items-center justify-between group hover:border-zinc-700 transition-colors"
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {(metrics?.checking_accounts || []).map((acct) => {
+              const isPrimary = acct.account_role === "primary_spend";
+              const isMortgage = acct.account_role === "mortgage";
+              const isBills = acct.account_role === "bills_subs";
+
+              let roleLabel = "General Checking";
+              if (isPrimary) roleLabel = "Primary Spend & Card Payoff";
+              else if (isMortgage) roleLabel = "Mortgage & Payroll Deposits";
+              else if (isBills) roleLabel = "Utilities & Subscriptions";
+
+              return (
+                <div
+                  key={acct.id}
+                  className="rounded-2xl border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.04] p-5 flex flex-col justify-between transition-all group"
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.06] text-zinc-300">
+                        {roleLabel}
+                      </span>
+                      <button
+                        onClick={() => {
+                          const raw = metrics?.buckets
+                            ?.flatMap((b) => b.accounts)
+                            .find((a) => a.id === acct.id);
+                          if (raw) openEditModal(raw);
+                        }}
+                        className="text-zinc-400 hover:text-white transition-colors p-1"
+                        title="Configure Account"
                       >
-                        <div className="truncate pr-2">
-                          <span className="font-medium text-zinc-200 block truncate">
-                            {acct.custom_name || acct.name}
-                          </span>
-                          <span className="text-[10px] text-zinc-500 font-mono block">
-                            {acct.institution}
-                          </span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <span className="font-mono text-zinc-300 font-bold whitespace-nowrap">
-                            {formatCurrency(acct.current_balance)}
-                          </span>
-                          <button
-                            onClick={() => openEditModal(acct)}
-                            className="text-zinc-600 hover:text-white transition-colors p-1"
-                            title="Edit Account / Reassign Bucket"
-                          >
-                            <Settings2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        <Settings2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <h3 className="font-medium text-white text-sm truncate">
+                      {acct.custom_name || acct.name}
+                    </h3>
+                    <p className="text-xs text-zinc-400 mb-3">{acct.institution}</p>
+
+                    <div className="text-2xl font-semibold font-mono text-white mb-4">
+                      {formatCurrency(acct.current_balance)}
+                    </div>
+
+                    {/* Cashflow In/Out stats */}
+                    <div className="grid grid-cols-3 gap-2 bg-white/[0.02] border border-white/[0.04] p-2.5 rounded-xl text-xs font-mono mb-3">
+                      <div>
+                        <span className="text-[10px] text-zinc-400 block font-sans">Inflow</span>
+                        <span className="text-emerald-400 font-medium">+{formatCurrency(acct.inflow_30d)}</span>
                       </div>
-                    ))}
-                    {b.accounts.length === 0 && (
-                      <p className="text-xs text-zinc-600 italic">No accounts in this bucket</p>
+                      <div>
+                        <span className="text-[10px] text-zinc-400 block font-sans">Outflow</span>
+                        <span className="text-zinc-300 font-medium">-{formatCurrency(acct.outflow_30d)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-zinc-400 block font-sans">Net</span>
+                        <span
+                          className={`font-medium ${
+                            acct.net_cashflow >= 0 ? "text-emerald-400" : "text-rose-400"
+                          }`}
+                        >
+                          {formatCurrency(acct.net_cashflow)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {acct.warnings.length > 0 && (
+                      <div className="space-y-1.5 my-3">
+                        {acct.warnings.map((w, idx) => (
+                          <div
+                            key={idx}
+                            className="text-xs flex items-center space-x-1.5 bg-rose-500/10 text-rose-300 border border-rose-500/20 px-2.5 py-1.5 rounded-lg"
+                          >
+                            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-rose-400" />
+                            <span>{w}</span>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
+
+                  <div className="pt-3 border-t border-white/[0.06] flex items-center justify-between text-xs text-zinc-400">
+                    <span>Threshold Floor:</span>
+                    <span className="font-mono text-zinc-300">
+                      {formatCurrency(acct.low_balance_threshold)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* 4 Financial Buckets */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-white">4 Core Asset Buckets</h2>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Categorized institutional accounts and balances
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {(metrics?.buckets || []).map((b) => {
+              let label = "Day-to-Day Checking";
+              let balanceColor = "text-emerald-400";
+              let icon = <Wallet className="w-4 h-4 text-emerald-400" />;
+
+              if (b.bucket === "short_term_debt") {
+                label = "Short-Term Debt";
+                balanceColor = "text-rose-400";
+                icon = <CreditCard className="w-4 h-4 text-rose-400" />;
+              } else if (b.bucket === "savings") {
+                label = "Savings & Reserves";
+                balanceColor = "text-blue-400";
+                icon = <PiggyBank className="w-4 h-4 text-blue-400" />;
+              } else if (b.bucket === "retirement") {
+                label = "Retirement & Wealth";
+                balanceColor = "text-purple-400";
+                icon = <TrendingUp className="w-4 h-4 text-purple-400" />;
+              }
+
+              return (
+                <div
+                  key={b.bucket}
+                  className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center space-x-2 text-xs font-medium text-zinc-300">
+                        {icon}
+                        <span>{label}</span>
+                      </div>
+                      <span className="text-[11px] text-zinc-400">{b.account_count} accts</span>
+                    </div>
+
+                    <div className={`text-2xl font-semibold font-mono my-2 ${balanceColor}`}>
+                      {formatCurrency(b.total_balance)}
+                    </div>
+
+                    <div className="space-y-2 mt-4 max-h-56 overflow-y-auto pr-1">
+                      {b.accounts.map((acct) => (
+                        <div
+                          key={acct.id}
+                          className="bg-white/[0.02] border border-white/[0.04] hover:border-white/[0.1] rounded-xl p-2.5 text-xs flex items-center justify-between transition-colors group"
+                        >
+                          <div className="truncate pr-2">
+                            <span className="font-medium text-zinc-200 block truncate">
+                              {acct.custom_name || acct.name}
+                            </span>
+                            <span className="text-[11px] text-zinc-400 block mt-0.5">
+                              {acct.institution}
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="font-mono text-zinc-300 font-medium whitespace-nowrap">
+                              {formatCurrency(acct.current_balance)}
+                            </span>
+                            <button
+                              onClick={() => openEditModal(acct)}
+                              className="text-zinc-400 hover:text-white transition-colors p-1"
+                              title="Edit Account"
+                            >
+                              <Settings2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {b.accounts.length === 0 && (
+                        <p className="text-xs text-zinc-400 italic py-2">No active accounts in bucket</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Charts: Velocity & Cashflow */}
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Burn Rate vs Safe Limit */}
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6 flex flex-col justify-between">
+            <div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-white/[0.06] gap-2 mb-4">
+                <div className="flex items-center space-x-2">
+                  <Flame className="w-4 h-4 text-amber-400" />
+                  <h3 className="text-sm font-semibold text-white">Daily Burn vs. Speed Limit</h3>
+                </div>
+                <div className="flex items-center space-x-3 text-xs text-zinc-400">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                    Within Pace
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-400" />
+                    Over Cap
+                  </span>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      </section>
 
-      {/* 14-Day Financial Velocity & Cashflow Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Daily Burn Rate vs. Safe Speed Limit Chart */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 flex flex-col justify-between">
-          <div>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-zinc-800/80 gap-2 mb-4">
-              <div className="flex items-center space-x-2">
-                <Flame className="w-5 h-5 text-orange-400" />
-                <h3 className="text-base font-bold text-white">Daily Burn Rate vs. Speed Limit</h3>
+              {/* Stat Summary */}
+              <div className="grid grid-cols-3 gap-2 mb-4 bg-white/[0.02] border border-white/[0.04] p-3 rounded-xl text-xs">
+                <div>
+                  <span className="text-zinc-400 block">Safe Target</span>
+                  <span className="text-amber-300 font-semibold font-mono mt-0.5 block">
+                    {formatCurrency(burnRate?.safe_daily_spend ?? 0)}/d
+                  </span>
+                </div>
+                <div>
+                  <span className="text-zinc-400 block">14d Average</span>
+                  <span className="text-zinc-200 font-semibold font-mono mt-0.5 block">
+                    {formatCurrency(avg14dSpend)}/d
+                  </span>
+                </div>
+                <div>
+                  <span className="text-zinc-400 block">Spikes</span>
+                  <span className={`font-semibold font-mono mt-0.5 block ${overLimitDays > 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                    {overLimitDays} of {burnTrend.length} days
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center space-x-3 text-[11px] font-mono">
-                <span className="flex items-center gap-1 text-[#00ff88]">
-                  <span className="w-2 h-2 rounded-full bg-[#00ff88]" />
-                  Safe
-                </span>
-                <span className="flex items-center gap-1 text-[#ff4444]">
-                  <span className="w-2 h-2 rounded-full bg-[#ff4444]" />
-                  Over Cap
-                </span>
-                <span className="flex items-center gap-1 text-[#ffcc00]">
-                  <span className="w-2.5 h-0.5 bg-[#ffcc00]" />
-                  Limit
-                </span>
-              </div>
-            </div>
 
-            {/* Quick Stat Highlights */}
-            <div className="grid grid-cols-3 gap-2 mb-4 bg-black/60 border border-zinc-900 p-2.5 rounded-lg text-xs font-mono">
-              <div>
-                <span className="text-[10px] text-zinc-500 block uppercase">Speed Limit</span>
-                <span className="text-[#ffcc00] font-bold">
-                  {formatCurrency(burnRate?.safe_daily_spend ?? 0)}/d
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] text-zinc-500 block uppercase">14d Avg Spend</span>
-                <span className="text-zinc-200 font-bold">
-                  {formatCurrency(avg14dSpend)}/d
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] text-zinc-500 block uppercase">Violations</span>
-                <span className={overLimitDays > 0 ? "text-[#ff4444] font-bold" : "text-[#00ff88] font-bold"}>
-                  {overLimitDays} of {burnTrend.length} days
-                </span>
-              </div>
-            </div>
-
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={burnTrend} margin={{ top: 12, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
-                  <XAxis dataKey="date" stroke="#666" fontSize={10} tickLine={false} />
-                  <YAxis stroke="#666" fontSize={10} tickLine={false} tickFormatter={(v) => `$${v}`} />
-                  <Tooltip
-                    content={({ active, payload }) => {
-                      if (!active || !payload || !payload.length) return null;
-                      const d = payload[0].payload;
-                      return (
-                        <div className="bg-black/95 border border-zinc-700 p-3 rounded-lg text-xs font-mono shadow-2xl">
-                          <p className="text-zinc-400 font-bold mb-1">{d.date}</p>
-                          <p className="text-white flex items-center justify-between gap-4">
-                            <span>Actual Spend:</span>
-                            <span className={d.is_over_limit ? "text-[#ff4444] font-bold" : "text-[#00ff88] font-bold"}>
-                              {formatCurrency(d.actual_spend)}
-                            </span>
-                          </p>
-                          <p className="text-zinc-400 flex items-center justify-between gap-4">
-                            <span>Safe Speed Limit:</span>
-                            <span className="text-[#ffcc00] font-bold">{formatCurrency(d.safe_limit)}</span>
-                          </p>
-                          <p className={`mt-1.5 pt-1.5 border-t border-zinc-800 text-[11px] font-bold ${
-                            d.is_over_limit ? "text-[#ff4444]" : "text-[#00ff88]"
-                          }`}>
-                            {d.is_over_limit
-                              ? `⚠️ Exceeded limit by ${formatCurrency(d.actual_spend - d.safe_limit)}`
-                              : "✓ Disciplined (Under Daily Limit)"}
-                          </p>
-                        </div>
-                      );
-                    }}
-                  />
-                  {burnRate?.safe_daily_spend && burnRate.safe_daily_spend > 0 && (
-                    <ReferenceLine
-                      y={burnRate.safe_daily_spend}
-                      stroke="#ffcc00"
-                      strokeDasharray="4 4"
-                      strokeWidth={1.5}
-                      label={{
-                        value: `Limit: $${Math.round(burnRate.safe_daily_spend)}/d`,
-                        fill: "#ffcc00",
-                        position: "top",
-                        fontSize: 10,
-                        fontFamily: "monospace",
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={burnTrend} margin={{ top: 12, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                    <XAxis dataKey="date" stroke="#71717a" fontSize={11} tickLine={false} />
+                    <YAxis stroke="#71717a" fontSize={11} tickLine={false} tickFormatter={(v) => `$${v}`} />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (!active || !payload || !payload.length) return null;
+                        const d = payload[0].payload;
+                        return (
+                          <div className="bg-[#18181b]/95 backdrop-blur-md border border-white/[0.1] p-3 rounded-xl text-xs shadow-2xl space-y-1.5">
+                            <p className="text-zinc-400 font-medium">{d.date}</p>
+                            <div className="flex justify-between gap-4">
+                              <span className="text-zinc-400">Actual Outflow:</span>
+                              <span className={`font-mono font-medium ${d.is_over_limit ? "text-rose-400" : "text-emerald-400"}`}>
+                                {formatCurrency(d.actual_spend)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                              <span className="text-zinc-400">Safe Target:</span>
+                              <span className="font-mono text-amber-300 font-medium">{formatCurrency(d.safe_limit)}</span>
+                            </div>
+                          </div>
+                        );
                       }}
                     />
-                  )}
-                  <Bar dataKey="actual_spend" name="Daily Spend" radius={[3, 3, 0, 0]}>
-                    {burnTrend.map((entry, idx) => (
-                      <Cell
-                        key={`burn-cell-${idx}`}
-                        fill={entry.is_over_limit ? "#ff4444" : "#00ff88"}
+                    {burnRate?.safe_daily_spend && burnRate.safe_daily_spend > 0 && (
+                      <ReferenceLine
+                        y={burnRate.safe_daily_spend}
+                        stroke="#f59e0b"
+                        strokeDasharray="4 4"
+                        strokeWidth={1.5}
                       />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+                    )}
+                    <Bar dataKey="actual_spend" name="Spend" radius={[4, 4, 0, 0]}>
+                      {burnTrend.map((entry, idx) => (
+                        <Cell
+                          key={`burn-${idx}`}
+                          fill={entry.is_over_limit ? "#f87171" : "#34d399"}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
-          <p className="text-[11px] text-zinc-500 font-mono mt-3">
-            Spike days (e.g. mortgage, rent, or bulk orders) highlight in red. Days below your daily allowance show in green.
-          </p>
-        </div>
 
-        {/* 14-Day Cashflow History Chart */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between pb-3 border-b border-zinc-800/80 mb-4">
-              <div className="flex items-center space-x-2">
-                <TrendingUp className="w-4 h-4 text-[#00ff88]" />
-                <h3 className="text-base font-bold text-white">14-Day Cashflow History</h3>
+          {/* 14-Day Cashflow In vs Out */}
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between pb-4 border-b border-white/[0.06] mb-4">
+                <div className="flex items-center space-x-2">
+                  <TrendingUp className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-sm font-semibold text-white">14-Day Cashflow Dynamics</h3>
+                </div>
+                <span className="text-xs text-zinc-400">Inflows vs. Outflows</span>
               </div>
-              <span className="text-xs font-mono text-zinc-500">Inflows vs Outflows</span>
+
+              {/* Cashflow Stat Highlights */}
+              <div className="grid grid-cols-3 gap-2 mb-4 bg-white/[0.02] border border-white/[0.04] p-3 rounded-xl text-xs">
+                <div>
+                  <span className="text-zinc-400 block">Total Inflow</span>
+                  <span className="text-emerald-400 font-semibold font-mono mt-0.5 block">
+                    +{formatCurrency((metrics?.cashflow_trend || []).reduce((s, c) => s + c.inflow, 0))}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-zinc-400 block">Total Outflow</span>
+                  <span className="text-zinc-300 font-semibold font-mono mt-0.5 block">
+                    -{formatCurrency((metrics?.cashflow_trend || []).reduce((s, c) => s + c.outflow, 0))}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-zinc-400 block">Net Change</span>
+                  {(() => {
+                    const net14 = (metrics?.cashflow_trend || []).reduce((s, c) => s + c.net, 0);
+                    return (
+                      <span className={`font-semibold font-mono mt-0.5 block ${net14 >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                        {formatCurrency(net14)}
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={metrics?.cashflow_trend || []} margin={{ top: 12, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                    <XAxis dataKey="date" stroke="#71717a" fontSize={11} tickLine={false} />
+                    <YAxis stroke="#71717a" fontSize={11} tickLine={false} tickFormatter={(v) => `$${v}`} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#18181b",
+                        borderColor: "rgba(255,255,255,0.1)",
+                        borderRadius: "12px",
+                        fontSize: "12px",
+                      }}
+                      formatter={(val: any) => formatCurrency(Number(val))}
+                    />
+                    <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "8px" }} />
+                    <Bar dataKey="inflow" name="Inflow" fill="#34d399" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="outflow" name="Outflow" fill="#71717a" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
+          </div>
+        </section>
 
-            {/* Quick Stat Highlights for Cashflow */}
-            <div className="grid grid-cols-3 gap-2 mb-4 bg-black/60 border border-zinc-900 p-2.5 rounded-lg text-xs font-mono">
-              <div>
-                <span className="text-[10px] text-zinc-500 block uppercase">14d Inflow</span>
-                <span className="text-emerald-400 font-bold">
-                  +{formatCurrency((metrics?.cashflow_trend || []).reduce((s, c) => s + c.inflow, 0))}
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] text-zinc-500 block uppercase">14d Outflow</span>
-                <span className="text-rose-400 font-bold">
-                  -{formatCurrency((metrics?.cashflow_trend || []).reduce((s, c) => s + c.outflow, 0))}
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] text-zinc-500 block uppercase">14d Net</span>
-                {(() => {
-                  const net14 = (metrics?.cashflow_trend || []).reduce((s, c) => s + c.net, 0);
-                  return (
-                    <span className={`font-bold ${net14 >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                      {formatCurrency(net14)}
+        {/* Upcoming Bills Calendar */}
+        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <CalendarIcon className="w-4 h-4 text-amber-400" />
+              <h2 className="text-base font-semibold text-white">Upcoming Obligations</h2>
+            </div>
+            <span className="text-xs text-zinc-400">
+              {bills.length} active schedules (45-day window)
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {bills.map((bill) => {
+              const isDueSoon = bill.days_until <= 3;
+              return (
+                <div
+                  key={bill.id}
+                  className={`p-4 rounded-xl border text-xs flex items-center justify-between transition-all ${
+                    isDueSoon
+                      ? "bg-amber-500/[0.04] border-amber-500/30 text-amber-200"
+                      : "bg-white/[0.02] border-white/[0.06] text-zinc-300 hover:border-white/[0.1]"
+                  }`}
+                >
+                  <div className="truncate pr-3">
+                    <span className="font-medium block text-white text-sm truncate">{bill.title}</span>
+                    <span className="text-xs text-zinc-400 mt-0.5 block">
+                      Due {bill.due_date} · {bill.frequency}
                     </span>
-                  );
-                })()}
-              </div>
-            </div>
+                  </div>
 
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={metrics?.cashflow_trend || []} margin={{ top: 12, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
-                  <XAxis dataKey="date" stroke="#666" fontSize={10} tickLine={false} />
-                  <YAxis stroke="#666" fontSize={10} tickLine={false} tickFormatter={(v) => `$${v}`} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "#000", borderColor: "#333", fontSize: "12px", fontFamily: "monospace" }}
-                    formatter={(val: any) => formatCurrency(Number(val))}
-                  />
-                  <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "10px" }} />
-                  <Bar dataKey="inflow" name="Inflow (+)" fill="#00ff88" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="outflow" name="Outflow (-)" fill="#ff4444" radius={[2, 2, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-          <p className="text-[11px] text-zinc-500 font-mono mt-3">
-            Tracks total money entering and leaving your accounts day-by-day.
-          </p>
-        </div>
-      </div>
-
-      {/* Upcoming Bills Calendar */}
-      <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <CalendarIcon className="w-5 h-5 text-amber-400" />
-            <h2 className="text-lg font-bold tracking-tight text-white">
-              Upcoming Bills & Pay Dates
-            </h2>
-          </div>
-          <span className="text-xs font-mono text-zinc-500">
-            {bills.length} Schedules Active · 45-Day Timeline
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {bills.map((bill) => {
-            const isDueSoon = bill.days_until <= 3;
-            return (
-              <div
-                key={bill.id}
-                className={`p-3.5 rounded-lg border text-xs flex items-center justify-between transition-all ${
-                  isDueSoon
-                    ? "bg-amber-500/10 border-amber-500/40 text-amber-200"
-                    : "bg-black/60 border-zinc-800/80 text-zinc-300 hover:border-zinc-700"
-                }`}
-              >
-                <div className="truncate pr-3">
-                  <span className="font-bold block text-white text-sm truncate">{bill.title}</span>
-                  <span className="text-[11px] text-zinc-400 font-mono">
-                    Due {bill.due_date} ({bill.frequency})
-                  </span>
-                </div>
-
-                <div className="text-right flex-shrink-0">
-                  <span className="font-mono font-bold text-sm block text-white">
-                    {formatCurrency(bill.expected_amount)}
-                  </span>
-                  <span
-                    className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase inline-block mt-0.5 ${
-                      bill.days_until === 0
-                        ? "bg-rose-500/30 text-rose-300 border border-rose-500/40"
+                  <div className="text-right flex-shrink-0">
+                    <span className="font-mono font-medium text-sm block text-white">
+                      {formatCurrency(bill.expected_amount)}
+                    </span>
+                    <span
+                      className={`text-[10px] font-medium px-2 py-0.5 rounded-full inline-block mt-1 ${
+                        bill.days_until === 0
+                          ? "bg-rose-500/20 text-rose-300"
+                          : bill.days_until === 1
+                          ? "bg-amber-500/20 text-amber-300"
+                          : "bg-white/[0.06] text-zinc-400"
+                      }`}
+                    >
+                      {bill.days_until === 0
+                        ? "Today"
                         : bill.days_until === 1
-                        ? "bg-amber-500/30 text-amber-300 border border-amber-500/40"
-                        : "bg-zinc-800 text-zinc-400"
-                    }`}
-                  >
-                    {bill.days_until === 0
-                      ? "DUE TODAY"
-                      : bill.days_until === 1
-                      ? "TOMORROW"
-                      : `in ${bill.days_until} days`}
-                  </span>
+                        ? "Tomorrow"
+                        : `in ${bill.days_until} days`}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-          {bills.length === 0 && (
-            <p className="col-span-full text-xs text-zinc-500 italic py-8 text-center font-mono">
-              No upcoming bills detected yet. As recurring charges clear, SimpleFIN will populate them.
-            </p>
-          )}
-        </div>
-      </section>
-
-      {/* Wall of Shame: Recent AI Roasts */}
-      <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center space-x-2">
-            <Flame className="w-5 h-5 text-orange-500" />
-            <h2 className="text-lg font-bold tracking-tight text-white">
-              Marcus — AI Financial Planner
-            </h2>
+              );
+            })}
+            {bills.length === 0 && (
+              <p className="col-span-full text-xs text-zinc-400 italic py-6 text-center">
+                No upcoming bills found within the next 45 days.
+              </p>
+            )}
           </div>
-          <div className="flex items-center space-x-2 sm:space-x-3">
-            <button
-              onClick={handlePurgeTests}
-              className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800 text-xs font-mono transition-all"
-              title="Remove simulated/test transactions from database"
-            >
-              <Trash2 className="w-3.5 h-3.5 text-zinc-500" />
-              <span>Purge Tests</span>
-            </button>
-            <button
-              onClick={handleRoastReal}
-              disabled={testingRoast}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 text-xs font-mono transition-all disabled:opacity-50"
-              title="Roast actual transactions from your bank and dispatch top one to phone"
-            >
-              <Sparkles className={`w-3.5 h-3.5 ${testingRoast ? "animate-spin" : ""}`} />
-              <span>{testingRoast ? "Marcus is Roasting..." : "🔥 Roast Real Purchases"}</span>
-            </button>
-          </div>
-        </div>
+        </section>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {roasts.map((r) => (
-            <div
-              key={r.id}
-              className="bg-black/70 border border-zinc-800/80 rounded-lg p-4 space-y-3 flex flex-col justify-between"
-            >
+        {/* AI Financial Planner (Marcus) Feed */}
+        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center space-x-2">
+              <Sparkles className="w-4 h-4 text-emerald-400" />
               <div>
-                <div className="flex items-center justify-between text-xs font-mono text-zinc-400 mb-1">
-                  <span className="truncate pr-2">{r.merchant_clean || r.merchant_raw}</span>
-                  <span className="text-rose-400 font-bold whitespace-nowrap">
-                    -{formatCurrency(Math.abs(r.amount))}
-                  </span>
-                </div>
-
-                <p className="text-xs italic text-[#ffcc00] font-mono leading-relaxed bg-zinc-900/60 p-2.5 rounded border border-zinc-800">
-                  &ldquo;{r.roast_message || "Target identified. Standby for roast."}&rdquo;
-                </p>
+                <h2 className="text-base font-semibold text-white">Marcus — Financial Advisor</h2>
+                <p className="text-xs text-zinc-400">Direct evaluations & recent accountability reviews</p>
               </div>
-
-              {r.user_justification ? (
-                <div className="text-[11px] text-zinc-400 font-mono border-t border-zinc-800/80 pt-2 flex items-center justify-between">
-                  <span>Excused as:</span>
-                  <span className="text-emerald-400 font-bold">{r.category}</span>
-                </div>
-              ) : (
-                <div className="text-[11px] text-zinc-500 font-mono border-t border-zinc-800/80 pt-2 flex items-center space-x-1.5">
-                  <Clock className="w-3 h-3 text-amber-500" />
-                  <span>Awaiting user excuse via Telegram...</span>
-                </div>
-              )}
             </div>
-          ))}
-          {roasts.length === 0 && (
-            <div className="col-span-full py-8 text-center text-xs font-mono text-zinc-500">
-              No recent roasts dispatched. Purchases scoring ≥50 velocity or debt violations will appear here!
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={handlePurgeTests}
+                className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] text-zinc-400 hover:text-white border border-white/[0.08] text-xs transition-all"
+                title="Remove test simulated transactions"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-zinc-400" />
+                <span>Purge Tests</span>
+              </button>
+              <button
+                onClick={handleRoastReal}
+                disabled={testingRoast}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-medium transition-all disabled:opacity-50"
+              >
+                <Sparkles className={`w-3.5 h-3.5 ${testingRoast ? "animate-spin" : ""}`} />
+                <span>{testingRoast ? "Evaluating..." : "Review Recent Purchases"}</span>
+              </button>
             </div>
-          )}
-        </div>
-      </section>
+          </div>
 
-      {/* Account Edit / Reassignment Modal */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {roasts.map((r) => (
+              <div
+                key={r.id}
+                className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4 flex flex-col justify-between space-y-3"
+              >
+                <div>
+                  <div className="flex items-center justify-between text-xs text-zinc-400 mb-2">
+                    <span className="font-medium text-zinc-200 truncate pr-2">
+                      {r.merchant_clean || r.merchant_raw}
+                    </span>
+                    <span className="font-mono text-zinc-300 font-medium">
+                      -{formatCurrency(Math.abs(r.amount))}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-zinc-300 leading-relaxed bg-white/[0.02] p-3 rounded-lg border border-white/[0.04] italic">
+                    &ldquo;{r.roast_message || "Purchase under review."}&rdquo;
+                  </p>
+                </div>
+
+                {r.user_justification ? (
+                  <div className="text-[11px] text-zinc-400 border-t border-white/[0.04] pt-2 flex items-center justify-between">
+                    <span>Justification:</span>
+                    <span className="text-emerald-400 font-medium">{r.category}</span>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-zinc-400 border-t border-white/[0.04] pt-2 flex items-center space-x-1.5">
+                    <Clock className="w-3 h-3 text-amber-400" />
+                    <span>Awaiting justification via Telegram</span>
+                  </div>
+                )}
+              </div>
+            ))}
+            {roasts.length === 0 && (
+              <div className="col-span-full py-8 text-center text-xs text-zinc-400">
+                No recent evaluations pending. Discretionary expenses will appear here.
+              </div>
+            )}
+          </div>
+        </section>
+      </main>
+
+      {/* Account Configuration Modal */}
       {editingAccount && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-zinc-950 border border-zinc-800 w-full max-w-lg rounded-xl p-6 space-y-6 shadow-2xl animate-fade-in">
-            <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-[#18181b] border border-white/[0.1] w-full max-w-lg rounded-2xl p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
               <div>
-                <h3 className="text-lg font-bold text-white flex items-center space-x-2">
-                  <Settings2 className="w-5 h-5 text-[#00ff88]" />
+                <h3 className="text-base font-semibold text-white flex items-center space-x-2">
+                  <Settings2 className="w-4 h-4 text-emerald-400" />
                   <span>Configure Account</span>
                 </h3>
-                <p className="text-xs font-mono text-zinc-400 mt-0.5">
+                <p className="text-xs text-zinc-400 mt-0.5">
                   {editingAccount.institution} · {editingAccount.name}
                 </p>
               </div>
               <button
                 onClick={() => setEditingAccount(null)}
-                className="text-zinc-500 hover:text-white transition-colors"
+                className="text-zinc-400 hover:text-white transition-colors"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="space-y-4 text-xs font-mono">
-              {/* Custom Display Name */}
+            <div className="space-y-4 text-xs">
               <div>
-                <label className="text-zinc-400 block mb-1">Custom Display Name</label>
+                <label className="text-zinc-300 font-medium block mb-1.5">Custom Label</label>
                 <input
                   type="text"
                   value={editCustomName}
                   onChange={(e) => setEditCustomName(e.target.value)}
                   placeholder="e.g. Primary Daily Spend, Mortgage Escrow"
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-white focus:outline-none focus:border-[#00ff88]"
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500 transition-colors"
                 />
               </div>
 
-              {/* Bucket Selection */}
               <div>
-                <label className="text-zinc-400 block mb-1">Bucket Classification</label>
+                <label className="text-zinc-300 font-medium block mb-1.5">Asset Bucket</label>
                 <select
                   value={editBucket}
                   onChange={(e) => setEditBucket(e.target.value as BucketType)}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-white focus:outline-none focus:border-[#00ff88]"
+                  className="w-full bg-[#27272a] border border-white/[0.08] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500 transition-colors"
                 >
-                  <option value="day_to_day">🟢 Day-to-Day Checking</option>
-                  <option value="short_term_debt">🔴 Short-Term Debt (Credit Cards)</option>
-                  <option value="savings">🔵 Savings / Reserves / General Brokerage</option>
-                  <option value="retirement">🟣 Retirement (401k / IRA / Off-Budget)</option>
+                  <option value="day_to_day">Day-to-Day Checking</option>
+                  <option value="short_term_debt">Short-Term Debt (Credit Cards)</option>
+                  <option value="savings">Savings / Reserves / General Brokerage</option>
+                  <option value="retirement">Retirement (401k / IRA / Off-Budget)</option>
                 </select>
-                <p className="text-[10px] text-zinc-500 mt-1">
-                  Change this anytime to sort accounts (e.g. general brokerage into Savings).
-                </p>
               </div>
 
-              {/* Role Assignment (if Day-to-Day) */}
               {editBucket === "day_to_day" && (
                 <div>
-                  <label className="text-zinc-400 block mb-1">Checking Account Purpose</label>
+                  <label className="text-zinc-300 font-medium block mb-1.5">Checking Function</label>
                   <select
                     value={editRole}
                     onChange={(e) => setEditRole(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-white focus:outline-none focus:border-[#00ff88]"
+                    className="w-full bg-[#27272a] border border-white/[0.08] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500 transition-colors"
                   >
-                    <option value="primary_spend">💳 Primary Spend & CC Payoff (Active Debit)</option>
-                    <option value="mortgage">🏡 Mortgage & Work Direct Deposits</option>
-                    <option value="bills_subs">📑 Utilities & Recurring Subscriptions</option>
+                    <option value="primary_spend">Primary Spend & Credit Card Payoff</option>
+                    <option value="mortgage">Mortgage & Payroll Direct Deposits</option>
+                    <option value="bills_subs">Utilities & Recurring Subscriptions</option>
                     <option value="general">General Checking Account</option>
                   </select>
                 </div>
               )}
 
-              {/* Low Balance Warning Threshold */}
               <div>
-                <label className="text-zinc-400 block mb-1">
-                  Low Balance Alert Threshold ($)
-                </label>
+                <label className="text-zinc-300 font-medium block mb-1.5">Low Balance Warning Floor ($)</label>
                 <input
                   type="number"
                   value={editThreshold}
                   onChange={(e) => setEditThreshold(Number(e.target.value))}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-white focus:outline-none focus:border-[#00ff88]"
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500 transition-colors"
                 />
-                <p className="text-[10px] text-zinc-500 mt-1">
-                  Triggers an on-screen dashboard warning if balance drops below this amount.
-                </p>
               </div>
 
-              {/* Include in Cashflow */}
               <div className="flex items-center space-x-2 pt-2">
                 <input
                   type="checkbox"
                   id="includeCashflow"
                   checked={editIncludeCashflow}
                   onChange={(e) => setEditIncludeCashflow(e.target.checked)}
-                  className="rounded border-zinc-800 bg-zinc-900 text-[#00ff88] focus:ring-0"
+                  className="rounded border-white/20 bg-white/5 text-emerald-500 focus:ring-0"
                 />
-                <label htmlFor="includeCashflow" className="text-zinc-300 cursor-pointer">
-                  Include balance in live Cashflow & True Safe-to-Spend
+                <label htmlFor="includeCashflow" className="text-zinc-300 cursor-pointer text-xs">
+                  Include balance in active cashflow calculation
                 </label>
               </div>
             </div>
 
-            <div className="flex items-center justify-end space-x-3 pt-3 border-t border-zinc-800">
+            <div className="flex items-center justify-end space-x-2.5 pt-3 border-t border-white/[0.08]">
               <button
                 onClick={() => setEditingAccount(null)}
-                className="px-4 py-2 rounded text-xs font-mono text-zinc-400 hover:text-white"
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:text-white transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveAccount}
                 disabled={isSavingAccount}
-                className="px-5 py-2 rounded text-xs font-mono font-bold bg-[#00ff88] text-black hover:bg-[#00e077] transition-all disabled:opacity-50"
+                className="px-4 py-1.5 rounded-lg text-xs font-medium bg-emerald-500 text-zinc-950 hover:bg-emerald-400 transition-all disabled:opacity-50"
               >
-                {isSavingAccount ? "Saving..." : "Save Settings"}
+                {isSavingAccount ? "Saving..." : "Save Changes"}
               </button>
             </div>
           </div>
