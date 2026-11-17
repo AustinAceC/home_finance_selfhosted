@@ -79,6 +79,9 @@ export interface BillCalendarItem {
   status: "due_today" | "due_soon" | "upcoming";
   matched_account_id?: string | null;
   is_funded: boolean;
+  recurring_type?: "fixed" | "variable";
+  is_estimated?: boolean;
+  estimate_note?: string | null;
 }
 
 export interface MetricsSummary {

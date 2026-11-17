@@ -142,6 +142,9 @@ class BillCalendarItem(BaseModel):
     status: str     # 'due_today', 'due_soon', 'upcoming'
     matched_account_id: Optional[str] = None
     is_funded: bool = True
+    recurring_type: str = "fixed"       # 'fixed' or 'variable'
+    is_estimated: bool = False
+    estimate_note: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

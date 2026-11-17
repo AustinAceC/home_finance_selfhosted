@@ -536,11 +536,12 @@ async def get_calendar_bills(db: AsyncSession = Depends(get_db)):
     """
     Returns upcoming recurring bills and credit card payments
     projected across the current and upcoming 45 days.
+    Categorizes items into 'fixed' and 'variable' with estimates flagged.
     """
     now = datetime.now(timezone.utc)
     items: list[BillCalendarItem] = []
 
-    # 1. Recurring schedules
+    # 1. Recurring schedules (Subscriptions & Utilities)
     rec_r = await db.execute(
         select(RecurringSchedule).where(RecurringSchedule.active == True)
     )
@@ -553,6 +554,10 @@ async def get_calendar_bills(db: AsyncSession = Depends(get_db)):
             target_dt = target_dt + timedelta(days=30)
             
         status = "due_today" if diff_days == 0 else ("due_soon" if diff_days <= 3 else "upcoming")
+
+        is_util = any(u in s.merchant_pattern.upper() for u in ["ENER", "POWER", "WATER", "GAS", "ELECTRIC", "PUGET"])
+        rec_type = "variable" if is_util else "fixed"
+
         items.append(BillCalendarItem(
             id=f"rec-{s.id}",
             title=s.merchant_pattern,
@@ -562,20 +567,24 @@ async def get_calendar_bills(db: AsyncSession = Depends(get_db)):
             frequency=s.frequency,
             status=status,
             is_funded=True,
+            recurring_type=rec_type,
+            is_estimated=is_util,
+            estimate_note="Estimated utility based on recent average" if is_util else None,
         ))
 
-    # 2. Credit cards due dates
+    # 2. Credit cards due dates (Variable card payoffs)
     cc_r = await db.execute(
         select(Account).where(
             Account.bucket == BucketType.short_term_debt,
-            Account.statement_due_day != None
         )
     )
     cards = cc_r.scalars().all()
     for card in cards:
-        day = card.statement_due_day
-        if not day:
+        day = card.statement_due_day or 21
+        balance_val = round(abs(float(card.current_balance)), 2)
+        if balance_val <= 0:
             continue
+
         try:
             due_date = now.replace(day=min(day, 28))
             if due_date.date() < now.date():
@@ -584,13 +593,16 @@ async def get_calendar_bills(db: AsyncSession = Depends(get_db)):
             status = "due_today" if diff_days == 0 else ("due_soon" if diff_days <= 3 else "upcoming")
             items.append(BillCalendarItem(
                 id=f"card-{card.id}",
-                title=f"{card.display_name} Payment",
-                expected_amount=round(abs(float(card.current_balance)), 2),
+                title=f"{card.display_name} Payoff",
+                expected_amount=balance_val,
                 due_date=due_date.strftime("%Y-%m-%d"),
                 days_until=diff_days,
                 frequency="monthly",
                 status=status,
                 is_funded=True,
+                recurring_type="variable",
+                is_estimated=True,
+                estimate_note="Variable statement balance (estimated full payoff)",
             ))
         except Exception:
             pass

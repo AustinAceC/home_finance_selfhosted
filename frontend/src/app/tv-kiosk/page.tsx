@@ -13,17 +13,16 @@ import {
 } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
-  Flame,
   Calendar,
   Wallet,
   CreditCard,
   PiggyBank,
   TrendingUp,
   Shield,
-  Clock,
   Sparkles,
   AlertCircle,
   Building2,
+  Layers,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -34,13 +33,16 @@ import {
   YAxis,
   CartesianGrid,
   ReferenceLine,
+  AreaChart,
+  Area,
+  Legend,
 } from "recharts";
 
 function KioskContent() {
   const searchParams = useSearchParams();
   const privacyParam = searchParams.get("privacy");
 
-  // 0 = 4 Buckets + Burn Rate, 1 = Velocity Radar Chart, 2 = Checking Radar, 3 = Advisor Insights, 4 = Upcoming Bills
+  // 0 = 4 Buckets & Net Cashflow, 1 = Cashflow Trajectory Chart, 2 = Checking Radar, 3 = Advisor Insights, 4 = Upcoming Bills
   const [currentSlide, setCurrentSlide] = useState(0);
   const [metrics, setMetrics] = useState<MetricsSummary | null>(null);
   const [roasts, setRoasts] = useState<Transaction[]>([]);
@@ -140,7 +142,11 @@ function KioskContent() {
   };
 
   const safeToSpend = metrics?.true_safe_to_spend ?? 0;
-  const burnRate = metrics?.burn_rate;
+  const inflow30d = metrics?.inflow_30d ?? 0;
+  const outflow30d = metrics?.outflow_30d ?? 0;
+  const net30d = inflow30d - outflow30d;
+
+  const cashflowTrend = metrics?.cashflow_trend || [];
 
   return (
     <div className="fixed inset-0 bg-[#000000] text-zinc-100 overflow-hidden select-none cursor-none flex flex-col justify-between p-8 md:p-12 font-sans">
@@ -167,7 +173,7 @@ function KioskContent() {
 
         {/* Dynamic Slide View */}
         <main className="flex-1 flex flex-col justify-center py-6">
-          {/* SLIDE 0: 4 Core Buckets & Burn Rate HUD */}
+          {/* SLIDE 0: 4 Core Buckets & Net Cashflow */}
           {currentSlide === 0 && (
             <div className="space-y-8 animate-fadeIn">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pb-8 border-b border-zinc-900">
@@ -188,20 +194,22 @@ function KioskContent() {
                 <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-6 flex flex-col justify-between">
                   <div className="flex items-center justify-between text-xs text-zinc-400">
                     <span className="flex items-center gap-2">
-                      <Flame className="w-4 h-4 text-amber-400" />
-                      <span>Monthly Outflow Velocity</span>
+                      <TrendingUp className="w-4 h-4 text-emerald-400" />
+                      <span>30-Day Net Cashflow Position</span>
                     </span>
-                    <span className="font-semibold text-white uppercase">{burnRate?.status}</span>
+                    <span className="font-semibold text-white uppercase">
+                      {net30d >= 0 ? "Surplus" : "Deficit"}
+                    </span>
                   </div>
-                  <div className="text-3xl font-semibold font-mono text-white my-2">
-                    {burnRate?.burn_rate_pct ?? 0}%
-                    <span className="text-xs font-normal text-zinc-500 ml-2">of monthly inflow</span>
+                  <div
+                    className={`text-4xl font-semibold font-mono my-2 ${
+                      net30d >= 0 ? "text-emerald-400" : "text-rose-400"
+                    }`}
+                  >
+                    {net30d >= 0 ? `+${displayAmount(net30d)}` : displayAmount(net30d)}
                   </div>
                   <div className="text-xs text-zinc-400">
-                    Safe Daily Limit:{" "}
-                    <span className="text-emerald-400 font-semibold font-mono">
-                      {displayAmount(burnRate?.safe_daily_spend ?? 0)}/day
-                    </span>
+                    Inflow: <span className="text-emerald-400 font-mono">+{displayAmount(inflow30d)}</span> · Outflow: <span className="text-zinc-300 font-mono">-{displayAmount(outflow30d)}</span>
                   </div>
                 </div>
               </div>
@@ -255,63 +263,51 @@ function KioskContent() {
             </div>
           )}
 
-          {/* SLIDE 1: Daily Burn Rate & Velocity Radar */}
+          {/* SLIDE 1: 14-Day Cashflow Dynamics Bar Chart */}
           {currentSlide === 1 && (
             <div className="space-y-6 animate-fadeIn">
               <div className="flex items-center justify-between pb-4 border-b border-zinc-900">
                 <div className="flex items-center gap-3">
-                  <Flame className="w-5 h-5 text-amber-400" />
+                  <TrendingUp className="w-5 h-5 text-emerald-400" />
                   <h2 className="text-2xl font-semibold tracking-tight text-white">
-                    Daily Velocity Radar
+                    Cashflow Dynamics (14 Days)
                   </h2>
                 </div>
                 <div className="flex items-center gap-5 text-xs">
                   <span className="flex items-center gap-1.5 text-emerald-400">
                     <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                    Within Pace
+                    Inflow
                   </span>
-                  <span className="flex items-center gap-1.5 text-rose-400">
-                    <span className="w-2 h-2 rounded-full bg-rose-400" />
-                    Over Limit
+                  <span className="flex items-center gap-1.5 text-zinc-400">
+                    <span className="w-2 h-2 rounded-full bg-zinc-600" />
+                    Outflow
                   </span>
                 </div>
               </div>
 
               {/* Stat Cards */}
-              <div className="grid grid-cols-4 gap-6">
+              <div className="grid grid-cols-3 gap-6">
                 <div className="bg-black border border-zinc-900 rounded-2xl p-5">
-                  <div className="text-xs text-zinc-500 mb-1">Daily Cap</div>
-                  <div className="text-2xl font-mono font-semibold text-amber-300">
-                    {displayAmount(burnRate?.safe_daily_spend ?? 0)}/d
+                  <div className="text-xs text-zinc-500 mb-1">14d Total Inflow</div>
+                  <div className="text-2xl font-mono font-semibold text-emerald-400">
+                    +{displayAmount(cashflowTrend.reduce((s, c) => s + c.inflow, 0))}
                   </div>
                 </div>
 
                 <div className="bg-black border border-zinc-900 rounded-2xl p-5">
-                  <div className="text-xs text-zinc-500 mb-1">14-Day Average</div>
-                  <div className="text-2xl font-mono font-semibold text-white">
-                    {displayAmount(
-                      (metrics?.daily_burn_trend || []).length > 0
-                        ? (metrics?.daily_burn_trend || []).reduce((s, p) => s + p.actual_spend, 0) /
-                          (metrics?.daily_burn_trend || []).length
-                        : 0
-                    )}/d
+                  <div className="text-xs text-zinc-500 mb-1">14d Total Outflow</div>
+                  <div className="text-2xl font-mono font-semibold text-zinc-300">
+                    -{displayAmount(cashflowTrend.reduce((s, c) => s + c.outflow, 0))}
                   </div>
                 </div>
 
                 <div className="bg-black border border-zinc-900 rounded-2xl p-5">
-                  <div className="text-xs text-zinc-500 mb-1">Monthly Burn</div>
-                  <div className="text-2xl font-mono font-semibold text-white">
-                    {burnRate?.burn_rate_pct ?? 0}%
-                  </div>
-                </div>
-
-                <div className="bg-black border border-zinc-900 rounded-2xl p-5">
-                  <div className="text-xs text-zinc-500 mb-1">Over-Limit Days</div>
+                  <div className="text-xs text-zinc-500 mb-1">14d Net Position</div>
                   {(() => {
-                    const overDays = (metrics?.daily_burn_trend || []).filter((p) => p.is_over_limit).length;
+                    const net14 = cashflowTrend.reduce((s, c) => s + c.net, 0);
                     return (
-                      <div className={`text-2xl font-mono font-semibold ${overDays > 0 ? "text-rose-400" : "text-emerald-400"}`}>
-                        {overDays} of {(metrics?.daily_burn_trend || []).length}
+                      <div className={`text-2xl font-mono font-semibold ${net14 >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                        {net14 >= 0 ? `+${displayAmount(net14)}` : displayAmount(net14)}
                       </div>
                     );
                   })()}
@@ -321,26 +317,13 @@ function KioskContent() {
               {/* Chart */}
               <div className="bg-black border border-zinc-900 rounded-2xl p-6 h-[320px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={metrics?.daily_burn_trend || []} margin={{ top: 15, right: 20, left: 0, bottom: 0 }}>
+                  <BarChart data={cashflowTrend} margin={{ top: 15, right: 20, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#18181b" vertical={false} />
                     <XAxis dataKey="date" stroke="#52525b" fontSize={12} tickLine={false} />
                     <YAxis stroke="#52525b" fontSize={12} tickLine={false} tickFormatter={(v) => `$${v}`} />
-                    {burnRate?.safe_daily_spend && burnRate.safe_daily_spend > 0 && (
-                      <ReferenceLine
-                        y={burnRate.safe_daily_spend}
-                        stroke="#f59e0b"
-                        strokeDasharray="4 4"
-                        strokeWidth={1.5}
-                      />
-                    )}
-                    <Bar dataKey="actual_spend" name="Daily Spend" radius={[4, 4, 0, 0]}>
-                      {(metrics?.daily_burn_trend || []).map((entry, idx) => (
-                        <Cell
-                          key={`tv-cell-${idx}`}
-                          fill={entry.is_over_limit ? "#f87171" : "#34d399"}
-                        />
-                      ))}
-                    </Bar>
+                    <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }} />
+                    <Bar dataKey="inflow" name="Inflow (+)" fill="#34d399" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="outflow" name="Outflow (-)" fill="#71717a" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -488,7 +471,7 @@ function KioskContent() {
                   <Calendar className="w-5 h-5 text-amber-400" />
                   <h2 className="text-2xl font-semibold tracking-tight text-white">Upcoming Obligations</h2>
                 </div>
-                <div className="text-xs text-zinc-500">45-Day Cash Reserve Forecast</div>
+                <div className="text-xs text-zinc-500">Fixed & Variable Commitments</div>
               </div>
 
               <div className="space-y-3 pt-2">
@@ -513,16 +496,23 @@ function KioskContent() {
                           }`}
                         />
                         <div>
-                          <div className="text-lg font-medium text-white">{bill.title}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg font-medium text-white">{bill.title}</span>
+                            {bill.is_estimated && (
+                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                                Estimated
+                              </span>
+                            )}
+                          </div>
                           <div className="text-xs text-zinc-500 mt-0.5">
-                            Due {bill.due_date} ({bill.frequency})
+                            Due {bill.due_date} ({bill.frequency}) · {bill.recurring_type === "variable" ? "Variable" : "Fixed"}
                           </div>
                         </div>
                       </div>
 
                       <div className="text-right">
                         <div className="text-xl font-mono font-semibold text-white">
-                          {displayAmount(bill.expected_amount)}
+                          {bill.is_estimated ? "~" : ""}{displayAmount(bill.expected_amount)}
                         </div>
                         <div className="text-xs text-amber-300 font-medium">
                           {bill.days_until <= 0
@@ -548,8 +538,8 @@ function KioskContent() {
                 Overview
               </span>
               <span>•</span>
-              <span className={currentSlide === 1 ? "text-amber-400 font-medium" : ""}>
-                Velocity
+              <span className={currentSlide === 1 ? "text-emerald-400 font-medium" : ""}>
+                Cashflow Dynamics
               </span>
               <span>•</span>
               <span className={currentSlide === 2 ? "text-blue-400 font-medium" : ""}>

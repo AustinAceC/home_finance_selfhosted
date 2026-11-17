@@ -26,7 +26,6 @@ import {
   PiggyBank,
   TrendingUp,
   AlertCircle,
-  Flame,
   Calendar as CalendarIcon,
   CheckCircle2,
   Clock,
@@ -36,8 +35,9 @@ import {
   X,
   Sparkles,
   Trash2,
-  ChevronRight,
   ShieldCheck,
+  Layers,
+  HelpCircle,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -49,6 +49,8 @@ import {
   Tooltip,
   CartesianGrid,
   Legend,
+  AreaChart,
+  Area,
   ReferenceLine,
 } from "recharts";
 
@@ -229,13 +231,26 @@ export default function DashboardPage() {
   }
 
   const safeToSpend = metrics?.true_safe_to_spend ?? 0;
-  const burnRate = metrics?.burn_rate;
-  const burnTrend = metrics?.daily_burn_trend || [];
-  const avg14dSpend =
-    burnTrend.length > 0
-      ? burnTrend.reduce((sum, p) => sum + p.actual_spend, 0) / burnTrend.length
-      : 0;
-  const overLimitDays = burnTrend.filter((p) => p.is_over_limit).length;
+  const inflow30d = metrics?.inflow_30d ?? 0;
+  const outflow30d = metrics?.outflow_30d ?? 0;
+  const net30d = inflow30d - outflow30d;
+
+  const cashflowTrend = metrics?.cashflow_trend || [];
+  const netCumulativeTrend = cashflowTrend.reduce((acc, point) => {
+    const prevNet = acc.length > 0 ? acc[acc.length - 1].cumulative_net : 0;
+    acc.push({
+      date: point.date,
+      inflow: point.inflow,
+      outflow: point.outflow,
+      daily_net: point.net,
+      cumulative_net: prevNet + point.net,
+    });
+    return acc;
+  }, [] as Array<{ date: string; inflow: number; outflow: number; daily_net: number; cumulative_net: number }>);
+
+  // Split bills into fixed and variable
+  const fixedBills = bills.filter((b) => b.recurring_type !== "variable");
+  const variableBills = bills.filter((b) => b.recurring_type === "variable");
 
   return (
     <div className="min-h-screen bg-[#09090b] text-zinc-100 font-sans selection:bg-emerald-500/20 selection:text-emerald-300">
@@ -290,7 +305,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Hero Section: True Safe-to-Spend & Burn Velocity */}
+        {/* Hero Section: True Safe-to-Spend & 30-Day Net Cashflow */}
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Safe-to-Spend Primary Card */}
           <div className="lg:col-span-2 relative overflow-hidden rounded-2xl border border-white/[0.08] bg-gradient-to-b from-white/[0.04] to-transparent p-6 sm:p-8 flex flex-col justify-between">
@@ -331,69 +346,78 @@ export default function DashboardPage() {
               <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
                 <span className="text-xs text-zinc-400 block font-medium">30-Day Inflow</span>
                 <span className="text-sm font-semibold font-mono text-emerald-400 mt-0.5 block">
-                  +{formatCurrency(metrics?.inflow_30d ?? 0)}
+                  +{formatCurrency(inflow30d)}
                 </span>
               </div>
               <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
                 <span className="text-xs text-zinc-400 block font-medium">30-Day Outflow</span>
                 <span className="text-sm font-semibold font-mono text-zinc-300 mt-0.5 block">
-                  -{formatCurrency(metrics?.outflow_30d ?? 0)}
+                  -{formatCurrency(outflow30d)}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Burn Velocity Card */}
+          {/* 30-Day Cashflow Velocity & Liquidity Card */}
           <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6 sm:p-7 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-zinc-400 flex items-center gap-1.5">
-                  <Flame className="w-3.5 h-3.5 text-amber-400" />
-                  Monthly Outflow Pace
+                  <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                  30-Day Net Cashflow
                 </span>
                 <span
                   className={`text-[11px] font-medium px-2 py-0.5 rounded-full capitalize ${
-                    burnRate?.status === "critical"
-                      ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
-                      : burnRate?.status === "warning"
-                      ? "bg-amber-500/10 text-amber-300 border border-amber-500/20"
-                      : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                    net30d >= 0
+                      ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                      : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
                   }`}
                 >
-                  {burnRate?.status ?? "Normal"}
+                  {net30d >= 0 ? "Cashflow Positive" : "Deficit Warning"}
                 </span>
               </div>
 
               <div className="mt-4 flex items-baseline space-x-2">
-                <span className="text-3xl font-semibold font-mono text-white">
-                  {burnRate?.burn_rate_pct ?? 0}%
-                </span>
-                <span className="text-xs text-zinc-400">of 30-day income consumed</span>
-              </div>
-
-              {/* Minimalist Progress Meter */}
-              <div className="w-full bg-white/[0.06] h-1.5 rounded-full overflow-hidden mt-4">
-                <div
-                  className={`h-full rounded-full transition-all duration-500 ${
-                    (burnRate?.burn_rate_pct ?? 0) > 100
-                      ? "bg-rose-500"
-                      : (burnRate?.burn_rate_pct ?? 0) > 80
-                      ? "bg-amber-400"
-                      : "bg-emerald-400"
+                <span
+                  className={`text-3xl font-semibold font-mono ${
+                    net30d >= 0 ? "text-emerald-400" : "text-rose-400"
                   }`}
-                  style={{ width: `${Math.min(burnRate?.burn_rate_pct ?? 0, 100)}%` }}
-                />
+                >
+                  {net30d >= 0 ? `+${formatCurrency(net30d)}` : formatCurrency(net30d)}
+                </span>
+                <span className="text-xs text-zinc-400">net retained</span>
               </div>
 
-              <p className="text-xs text-zinc-400 mt-4 leading-relaxed">
-                {burnRate?.status_message || "Monitoring current burn against scheduled income and standard baseline."}
-              </p>
+              <div className="space-y-3 mt-5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-400">Savings Rate:</span>
+                  <span className="font-semibold font-mono text-emerald-400">
+                    {inflow30d > 0 ? `${Math.round((net30d / inflow30d) * 100)}%` : "0%"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-400">Daily Inflow Avg:</span>
+                  <span className="font-semibold font-mono text-zinc-200">
+                    {formatCurrency(inflow30d / 30)}/day
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-400">Daily Outflow Avg:</span>
+                  <span className="font-semibold font-mono text-zinc-200">
+                    {formatCurrency(outflow30d / 30)}/day
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div className="pt-4 border-t border-white/[0.06] flex items-center justify-between text-xs">
-              <span className="text-zinc-400">Safe Daily Limit:</span>
-              <span className="font-semibold font-mono text-emerald-400">
-                {formatCurrency(burnRate?.safe_daily_spend ?? 0)} / day
+              <span className="text-zinc-400">Net Daily Pace:</span>
+              <span
+                className={`font-semibold font-mono ${
+                  net30d >= 0 ? "text-emerald-400" : "text-rose-400"
+                }`}
+              >
+                {net30d >= 0 ? `+${formatCurrency(net30d / 30)}` : formatCurrency(net30d / 30)} / day
               </span>
             </div>
           </div>
@@ -591,108 +615,17 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* Charts: Velocity & Cashflow */}
+        {/* Dual Cashflow Graphs */}
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Burn Rate vs Safe Limit */}
-          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6 flex flex-col justify-between">
-            <div>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-white/[0.06] gap-2 mb-4">
-                <div className="flex items-center space-x-2">
-                  <Flame className="w-4 h-4 text-amber-400" />
-                  <h3 className="text-sm font-semibold text-white">Daily Burn vs. Speed Limit</h3>
-                </div>
-                <div className="flex items-center space-x-3 text-xs text-zinc-400">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                    Within Pace
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-rose-400" />
-                    Over Cap
-                  </span>
-                </div>
-              </div>
-
-              {/* Stat Summary */}
-              <div className="grid grid-cols-3 gap-2 mb-4 bg-white/[0.02] border border-white/[0.04] p-3 rounded-xl text-xs">
-                <div>
-                  <span className="text-zinc-400 block">Safe Target</span>
-                  <span className="text-amber-300 font-semibold font-mono mt-0.5 block">
-                    {formatCurrency(burnRate?.safe_daily_spend ?? 0)}/d
-                  </span>
-                </div>
-                <div>
-                  <span className="text-zinc-400 block">14d Average</span>
-                  <span className="text-zinc-200 font-semibold font-mono mt-0.5 block">
-                    {formatCurrency(avg14dSpend)}/d
-                  </span>
-                </div>
-                <div>
-                  <span className="text-zinc-400 block">Spikes</span>
-                  <span className={`font-semibold font-mono mt-0.5 block ${overLimitDays > 0 ? "text-rose-400" : "text-emerald-400"}`}>
-                    {overLimitDays} of {burnTrend.length} days
-                  </span>
-                </div>
-              </div>
-
-              <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={burnTrend} margin={{ top: 12, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                    <XAxis dataKey="date" stroke="#71717a" fontSize={11} tickLine={false} />
-                    <YAxis stroke="#71717a" fontSize={11} tickLine={false} tickFormatter={(v) => `$${v}`} />
-                    <Tooltip
-                      content={({ active, payload }) => {
-                        if (!active || !payload || !payload.length) return null;
-                        const d = payload[0].payload;
-                        return (
-                          <div className="bg-[#18181b]/95 backdrop-blur-md border border-white/[0.1] p-3 rounded-xl text-xs shadow-2xl space-y-1.5">
-                            <p className="text-zinc-400 font-medium">{d.date}</p>
-                            <div className="flex justify-between gap-4">
-                              <span className="text-zinc-400">Actual Outflow:</span>
-                              <span className={`font-mono font-medium ${d.is_over_limit ? "text-rose-400" : "text-emerald-400"}`}>
-                                {formatCurrency(d.actual_spend)}
-                              </span>
-                            </div>
-                            <div className="flex justify-between gap-4">
-                              <span className="text-zinc-400">Safe Target:</span>
-                              <span className="font-mono text-amber-300 font-medium">{formatCurrency(d.safe_limit)}</span>
-                            </div>
-                          </div>
-                        );
-                      }}
-                    />
-                    {burnRate?.safe_daily_spend && burnRate.safe_daily_spend > 0 && (
-                      <ReferenceLine
-                        y={burnRate.safe_daily_spend}
-                        stroke="#f59e0b"
-                        strokeDasharray="4 4"
-                        strokeWidth={1.5}
-                      />
-                    )}
-                    <Bar dataKey="actual_spend" name="Spend" radius={[4, 4, 0, 0]}>
-                      {burnTrend.map((entry, idx) => (
-                        <Cell
-                          key={`burn-${idx}`}
-                          fill={entry.is_over_limit ? "#f87171" : "#34d399"}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-
-          {/* 14-Day Cashflow In vs Out */}
+          {/* Chart 1: Daily Inflows vs Outflows */}
           <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between pb-4 border-b border-white/[0.06] mb-4">
                 <div className="flex items-center space-x-2">
                   <TrendingUp className="w-4 h-4 text-emerald-400" />
-                  <h3 className="text-sm font-semibold text-white">14-Day Cashflow Dynamics</h3>
+                  <h3 className="text-sm font-semibold text-white">Daily Cash Inflows & Outflows</h3>
                 </div>
-                <span className="text-xs text-zinc-400">Inflows vs. Outflows</span>
+                <span className="text-xs text-zinc-400">14-Day Trajectory</span>
               </div>
 
               {/* Cashflow Stat Highlights */}
@@ -700,19 +633,19 @@ export default function DashboardPage() {
                 <div>
                   <span className="text-zinc-400 block">Total Inflow</span>
                   <span className="text-emerald-400 font-semibold font-mono mt-0.5 block">
-                    +{formatCurrency((metrics?.cashflow_trend || []).reduce((s, c) => s + c.inflow, 0))}
+                    +{formatCurrency(cashflowTrend.reduce((s, c) => s + c.inflow, 0))}
                   </span>
                 </div>
                 <div>
                   <span className="text-zinc-400 block">Total Outflow</span>
                   <span className="text-zinc-300 font-semibold font-mono mt-0.5 block">
-                    -{formatCurrency((metrics?.cashflow_trend || []).reduce((s, c) => s + c.outflow, 0))}
+                    -{formatCurrency(cashflowTrend.reduce((s, c) => s + c.outflow, 0))}
                   </span>
                 </div>
                 <div>
-                  <span className="text-zinc-400 block">Net Change</span>
+                  <span className="text-zinc-400 block">14d Net</span>
                   {(() => {
-                    const net14 = (metrics?.cashflow_trend || []).reduce((s, c) => s + c.net, 0);
+                    const net14 = cashflowTrend.reduce((s, c) => s + c.net, 0);
                     return (
                       <span className={`font-semibold font-mono mt-0.5 block ${net14 >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                         {formatCurrency(net14)}
@@ -724,7 +657,7 @@ export default function DashboardPage() {
 
               <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={metrics?.cashflow_trend || []} margin={{ top: 12, right: 10, left: -20, bottom: 0 }}>
+                  <BarChart data={cashflowTrend} margin={{ top: 12, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
                     <XAxis dataKey="date" stroke="#71717a" fontSize={11} tickLine={false} />
                     <YAxis stroke="#71717a" fontSize={11} tickLine={false} tickFormatter={(v) => `$${v}`} />
@@ -738,74 +671,245 @@ export default function DashboardPage() {
                       formatter={(val: any) => formatCurrency(Number(val))}
                     />
                     <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "8px" }} />
-                    <Bar dataKey="inflow" name="Inflow" fill="#34d399" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="outflow" name="Outflow" fill="#71717a" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="inflow" name="Inflow (+)" fill="#34d399" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="outflow" name="Outflow (-)" fill="#71717a" radius={[4, 4, 0, 0]} />
                   </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* Chart 2: Cumulative Net Cashflow Position */}
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between pb-4 border-b border-white/[0.06] mb-4">
+                <div className="flex items-center space-x-2">
+                  <Layers className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-sm font-semibold text-white">Cumulative Cash Position</h3>
+                </div>
+                <span className="text-xs text-zinc-400">14-Day Cumulative Net</span>
+              </div>
+
+              {/* Cumulative stats */}
+              <div className="grid grid-cols-3 gap-2 mb-4 bg-white/[0.02] border border-white/[0.04] p-3 rounded-xl text-xs">
+                <div>
+                  <span className="text-zinc-400 block">Peak Net</span>
+                  <span className="text-emerald-400 font-semibold font-mono mt-0.5 block">
+                    {formatCurrency(
+                      netCumulativeTrend.length > 0
+                        ? Math.max(...netCumulativeTrend.map((p) => p.cumulative_net))
+                        : 0
+                    )}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-zinc-400 block">Lowest Net</span>
+                  <span className="text-rose-400 font-semibold font-mono mt-0.5 block">
+                    {formatCurrency(
+                      netCumulativeTrend.length > 0
+                        ? Math.min(...netCumulativeTrend.map((p) => p.cumulative_net))
+                        : 0
+                    )}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-zinc-400 block">Net Direction</span>
+                  {(() => {
+                    const finalNet =
+                      netCumulativeTrend.length > 0
+                        ? netCumulativeTrend[netCumulativeTrend.length - 1].cumulative_net
+                        : 0;
+                    return (
+                      <span className={`font-semibold font-mono mt-0.5 block ${finalNet >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                        {finalNet >= 0 ? "Growing (+)" : "Deficit (-)"}
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={netCumulativeTrend} margin={{ top: 12, right: 10, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="netGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.25} />
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                    <XAxis dataKey="date" stroke="#71717a" fontSize={11} tickLine={false} />
+                    <YAxis stroke="#71717a" fontSize={11} tickLine={false} tickFormatter={(v) => `$${v}`} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#18181b",
+                        borderColor: "rgba(255,255,255,0.1)",
+                        borderRadius: "12px",
+                        fontSize: "12px",
+                      }}
+                      formatter={(val: any) => formatCurrency(Number(val))}
+                    />
+                    <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" strokeDasharray="3 3" />
+                    <Area
+                      type="monotone"
+                      dataKey="cumulative_net"
+                      name="Cumulative Net ($)"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      fillOpacity={1}
+                      fill="url(#netGradient)"
+                    />
+                  </AreaChart>
                 </ResponsiveContainer>
               </div>
             </div>
           </div>
         </section>
 
-        {/* Upcoming Bills Calendar */}
-        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6 space-y-4">
+        {/* Categorized Recurring Obligations (Fixed Subscriptions vs Variable Payments) */}
+        <section className="space-y-6">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <CalendarIcon className="w-4 h-4 text-amber-400" />
-              <h2 className="text-base font-semibold text-white">Upcoming Obligations</h2>
+            <div>
+              <h2 className="text-base font-semibold text-white">Upcoming Commitments & Recurring Bills</h2>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Segregated into fixed subscriptions and variable card/utility payments
+              </p>
             </div>
             <span className="text-xs text-zinc-400">
-              {bills.length} active schedules (45-day window)
+              {bills.length} total obligations
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {bills.map((bill) => {
-              const isDueSoon = bill.days_until <= 3;
-              return (
-                <div
-                  key={bill.id}
-                  className={`p-4 rounded-xl border text-xs flex items-center justify-between transition-all ${
-                    isDueSoon
-                      ? "bg-amber-500/[0.04] border-amber-500/30 text-amber-200"
-                      : "bg-white/[0.02] border-white/[0.06] text-zinc-300 hover:border-white/[0.1]"
-                  }`}
-                >
-                  <div className="truncate pr-3">
-                    <span className="font-medium block text-white text-sm truncate">{bill.title}</span>
-                    <span className="text-xs text-zinc-400 mt-0.5 block">
-                      Due {bill.due_date} · {bill.frequency}
-                    </span>
-                  </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* 1. Fixed Subscriptions */}
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+                <div className="flex items-center space-x-2">
+                  <CalendarIcon className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-sm font-semibold text-white">Fixed Subscriptions & Services</h3>
+                </div>
+                <span className="text-xs text-zinc-400">{fixedBills.length} Active</span>
+              </div>
 
-                  <div className="text-right flex-shrink-0">
-                    <span className="font-mono font-medium text-sm block text-white">
-                      {formatCurrency(bill.expected_amount)}
-                    </span>
-                    <span
-                      className={`text-[10px] font-medium px-2 py-0.5 rounded-full inline-block mt-1 ${
-                        bill.days_until === 0
-                          ? "bg-rose-500/20 text-rose-300"
-                          : bill.days_until === 1
-                          ? "bg-amber-500/20 text-amber-300"
-                          : "bg-white/[0.06] text-zinc-400"
+              <div className="space-y-2.5">
+                {fixedBills.map((bill) => {
+                  const isDueSoon = bill.days_until <= 3;
+                  return (
+                    <div
+                      key={bill.id}
+                      className={`p-3.5 rounded-xl border text-xs flex items-center justify-between transition-all ${
+                        isDueSoon
+                          ? "bg-amber-500/[0.04] border-amber-500/30 text-amber-200"
+                          : "bg-white/[0.02] border-white/[0.06] text-zinc-300 hover:border-white/[0.1]"
                       }`}
                     >
-                      {bill.days_until === 0
-                        ? "Today"
-                        : bill.days_until === 1
-                        ? "Tomorrow"
-                        : `in ${bill.days_until} days`}
-                    </span>
-                  </div>
+                      <div className="truncate pr-3">
+                        <span className="font-medium block text-white text-sm truncate">{bill.title}</span>
+                        <span className="text-xs text-zinc-400 mt-0.5 block">
+                          Due {bill.due_date} · {bill.frequency}
+                        </span>
+                      </div>
+
+                      <div className="text-right flex-shrink-0">
+                        <span className="font-mono font-medium text-sm block text-white">
+                          {formatCurrency(bill.expected_amount)}
+                        </span>
+                        <span
+                          className={`text-[10px] font-medium px-2 py-0.5 rounded-full inline-block mt-1 ${
+                            bill.days_until === 0
+                              ? "bg-rose-500/20 text-rose-300"
+                              : bill.days_until === 1
+                              ? "bg-amber-500/20 text-amber-300"
+                              : "bg-white/[0.06] text-zinc-400"
+                          }`}
+                        >
+                          {bill.days_until === 0
+                            ? "Today"
+                            : bill.days_until === 1
+                            ? "Tomorrow"
+                            : `in ${bill.days_until} days`}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {fixedBills.length === 0 && (
+                  <p className="text-xs text-zinc-400 italic py-6 text-center">
+                    No fixed subscriptions active.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* 2. Variable Payments (Credit Cards & Utilities) */}
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+                <div className="flex items-center space-x-2">
+                  <CreditCard className="w-4 h-4 text-amber-400" />
+                  <h3 className="text-sm font-semibold text-white">Variable Obligations & Estimated Payoffs</h3>
                 </div>
-              );
-            })}
-            {bills.length === 0 && (
-              <p className="col-span-full text-xs text-zinc-400 italic py-6 text-center">
-                No upcoming bills found within the next 45 days.
-              </p>
-            )}
+                <span className="text-xs text-zinc-400">{variableBills.length} Active</span>
+              </div>
+
+              <div className="space-y-2.5">
+                {variableBills.map((bill) => {
+                  const isDueSoon = bill.days_until <= 3;
+                  return (
+                    <div
+                      key={bill.id}
+                      className={`p-3.5 rounded-xl border text-xs flex items-center justify-between transition-all ${
+                        isDueSoon
+                          ? "bg-amber-500/[0.04] border-amber-500/30 text-amber-200"
+                          : "bg-white/[0.02] border-white/[0.06] text-zinc-300 hover:border-white/[0.1]"
+                      }`}
+                    >
+                      <div className="truncate pr-3">
+                        <div className="flex items-center space-x-1.5">
+                          <span className="font-medium text-white text-sm truncate">{bill.title}</span>
+                          {bill.is_estimated && (
+                            <span
+                              className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20"
+                              title={bill.estimate_note || "Estimated payment"}
+                            >
+                              Estimated
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-zinc-400 mt-0.5 block truncate">
+                          Due {bill.due_date} · {bill.estimate_note || bill.frequency}
+                        </span>
+                      </div>
+
+                      <div className="text-right flex-shrink-0">
+                        <span className="font-mono font-medium text-sm block text-amber-300">
+                          ~{formatCurrency(bill.expected_amount)}
+                        </span>
+                        <span
+                          className={`text-[10px] font-medium px-2 py-0.5 rounded-full inline-block mt-1 ${
+                            bill.days_until === 0
+                              ? "bg-rose-500/20 text-rose-300"
+                              : bill.days_until === 1
+                              ? "bg-amber-500/20 text-amber-300"
+                              : "bg-white/[0.06] text-zinc-400"
+                          }`}
+                        >
+                          {bill.days_until === 0
+                            ? "Today"
+                            : bill.days_until === 1
+                            ? "Tomorrow"
+                            : `in ${bill.days_until} days`}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {variableBills.length === 0 && (
+                  <p className="text-xs text-zinc-400 italic py-6 text-center">
+                    No variable obligations or card balances detected.
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
         </section>
 

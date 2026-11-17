@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 _TRANSFER_RE = re.compile(
     r"(?i)(payment\s+thank\s+you|autopay|online\s+payment|"
     r"chase\s+credit\s+crd|bk\s+of\s+amer\s+visa|discover\s+e.payment|"
-    r"citi\s+card\s+online|home\s+depot.*pymt|transfer\s+to|transfer\s+from|"
+    r"citi\s+card\s+online|home\s+depot.*(pymt|online\s+pmt)|transfer\s+to|transfer\s+from|"
     r"mobile\s+transfer|zelle|venmo\s+payment|paypal\s+transfer)"
 )
 
@@ -35,11 +35,10 @@ _TRANSFER_RE = re.compile(
 async def flag_internal_transfers(db: AsyncSession) -> int:
     """
     Mark transactions as internal transfers using:
-      a) Regex on merchant_raw
+      a) Regex on merchant_raw / merchant_clean
       b) Inverse-amount pairing across different accounts within 4 days
     Returns count of newly flagged transactions.
     """
-    # Fetch all un-evaluated transactions (not yet flagged as transfer)
     result = await db.execute(
         select(Transaction).where(Transaction.is_internal_transfer == False)
     )
@@ -49,12 +48,12 @@ async def flag_internal_transfers(db: AsyncSession) -> int:
 
     # --- Rule A: Regex ---
     for tx in transactions:
-        if _TRANSFER_RE.search(tx.merchant_raw):
+        raw_text = f"{tx.merchant_raw or ''} {tx.merchant_clean or ''}"
+        if _TRANSFER_RE.search(raw_text):
             tx.is_internal_transfer = True
             flagged += 1
 
     # --- Rule B: Inverse-amount pairing within 4 days ---
-    # Build lookup: amount → list of (tx, account_id)
     amount_map: dict[float, list[Transaction]] = defaultdict(list)
     for tx in transactions:
         if not tx.is_internal_transfer:
@@ -87,12 +86,22 @@ async def flag_internal_transfers(db: AsyncSession) -> int:
 # Recurring Bill Detection
 # ---------------------------------------------------------------------------
 
+# Exclude non-subscription discretionary spending (e.g. fast food, groceries, transfers)
+_NON_SUBSCRIPTION_RE = re.compile(
+    r"(?i)(jack\s+in\s+the\s+box|mcdonald|wendy|burger\s+king|taco\s+bell|"
+    r"starbucks|chipotle|subway|dunkin|fred-meyer|fred\s+meyer|winco|trader\s+joe|"
+    r"safeway|kroger|costco|walmart|target|home\s+depot.*pmt|payment\s+thank\s+you|"
+    r"reinvestment|tax\s+withheld|interest\s+payment)"
+)
+
+
 async def detect_recurring(db: AsyncSession) -> int:
     """
     Group historical outflows by merchant_clean.
-    If a merchant appears >= 3 times with median interval 27-33 days (monthly)
-    or 360-370 days (annual), upsert into recurring_schedules.
-    Also fires price-hike alerts.
+    If a merchant appears >= 3 times with median interval 25-35 days (monthly),
+    or 6-8 days (weekly), 12-16 days (bi-weekly), or 350-380 days (annual),
+    upsert into recurring_schedules.
+    Discretionary fast food/groceries and card payment transfers are excluded.
     Returns count of upserted/updated recurring schedules.
     """
     result = await db.execute(
@@ -107,11 +116,16 @@ async def detect_recurring(db: AsyncSession) -> int:
     # Group by clean merchant name
     by_merchant: dict[str, list[Transaction]] = defaultdict(list)
     for tx in transactions:
-        key = (tx.merchant_clean or tx.merchant_raw)[:100].upper()
+        key = (tx.merchant_clean or tx.merchant_raw)[:100].upper().strip()
         by_merchant[key].append(tx)
 
     upserted = 0
     for merchant, txs in by_merchant.items():
+        # Exclude obvious non-recurring discretionary or fast food
+        if _NON_SUBSCRIPTION_RE.search(merchant):
+            continue
+
+        # Require at least 3 occurrences for weekly/biweekly, or at least 2 with very consistent amounts for monthly
         if len(txs) < 2:
             continue
 
@@ -126,16 +140,22 @@ async def detect_recurring(db: AsyncSession) -> int:
             frequency = "monthly"
             cycle_days = 30
         elif 12 <= med_interval <= 16:
+            # Need at least 3 charges to establish a true bi-weekly recurring habit
+            if len(txs) < 3:
+                continue
             frequency = "bi-weekly"
             cycle_days = 14
         elif 6 <= med_interval <= 8:
+            # Need at least 3 charges for weekly
+            if len(txs) < 3:
+                continue
             frequency = "weekly"
             cycle_days = 7
         elif 350 <= med_interval <= 380:
             frequency = "annual"
             cycle_days = 365
         else:
-            continue  # Not a recognizable recurring pattern
+            continue
 
         amounts = [abs(float(t.amount)) for t in txs_sorted]
         expected = median(amounts)
@@ -166,28 +186,34 @@ async def detect_recurring(db: AsyncSession) -> int:
             schedule.next_expected_at = next_expected
             schedule.frequency = frequency
 
-        # Flag matching transactions as recurring
         for tx in txs:
             if not tx.is_recurring:
                 tx.is_recurring = True
 
-    if upserted:
-        await db.commit()
-        logger.info(f"Upserted {upserted} recurring schedules.")
+    # Also deactivate or purge any previously added non-subscription schedules (like Jack in the Box)
+    all_schedules_res = await db.execute(select(RecurringSchedule))
+    all_schedules = all_schedules_res.scalars().all()
+    for s in all_schedules:
+        if _NON_SUBSCRIPTION_RE.search(s.merchant_pattern):
+            s.active = False
+
+    await db.commit()
+    logger.info(f"Upserted {upserted} recurring schedules.")
     return upserted
 
 
 async def check_price_hike(
-    db: AsyncSession, tx: Transaction
-) -> Optional[str]:
+    db: AsyncSession,
+    tx: Transaction,
+) -> Optional[dict]:
     """
     If this transaction matches a recurring schedule and exceeds tolerance,
-    return an alert message string. Otherwise return None.
+    return a dict describing the price hike alert.
     """
     if not tx.merchant_clean:
         return None
 
-    merchant_key = tx.merchant_clean.upper()
+    merchant_key = tx.merchant_clean[:100].upper().strip()
     result = await db.execute(
         select(RecurringSchedule).where(
             RecurringSchedule.merchant_pattern == merchant_key,
@@ -195,14 +221,23 @@ async def check_price_hike(
         )
     )
     schedule = result.scalar_one_or_none()
-    if schedule is None:
+    if not schedule:
         return None
 
     actual = abs(float(tx.amount))
-    threshold = float(schedule.expected_amount) * (1 + float(schedule.tolerance_pct) / 100)
-    if actual > threshold:
-        return (
-            f"🚨 Price Hike Alert: {tx.merchant_clean} just charged ${actual:.2f} "
-            f"(usually ${float(schedule.expected_amount):.2f})."
-        )
+    expected = float(schedule.expected_amount)
+    tolerance = float(schedule.tolerance_pct) / 100.0
+
+    if actual > expected * (1.0 + tolerance):
+        diff = actual - expected
+        pct_increase = round((diff / expected) * 100.0, 1)
+        return {
+            "merchant": schedule.merchant_pattern,
+            "expected_amount": expected,
+            "actual_amount": actual,
+            "diff": round(diff, 2),
+            "pct_increase": pct_increase,
+            "alert": True,
+        }
+
     return None
