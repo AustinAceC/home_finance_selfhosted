@@ -86,46 +86,45 @@ async def flag_internal_transfers(db: AsyncSession) -> int:
 # Recurring Bill Detection
 # ---------------------------------------------------------------------------
 
-# Exclude non-subscription discretionary spending (e.g. fast food, groceries, transfers)
+# Exclude non-subscriptions (fast food, groceries, transfers, investments, securities)
 _NON_SUBSCRIPTION_RE = re.compile(
     r"(?i)(jack\s+in\s+the\s+box|mcdonald|wendy|burger\s+king|taco\s+bell|"
     r"starbucks|chipotle|subway|dunkin|fred-meyer|fred\s+meyer|winco|trader\s+joe|"
     r"safeway|kroger|costco|walmart|target|home\s+depot.*pmt|payment\s+thank\s+you|"
-    r"reinvestment|tax\s+withheld|interest\s+payment)"
+    r"reinvestment|tax\s+withheld|interest\s+payment|vanguard|fidelity|schwab|"
+    r"stock\s+index|etf\s+shares|index\s+fund|shares|fractional|dividend|brokerage)"
 )
 
 
 async def detect_recurring(db: AsyncSession) -> int:
     """
     Group historical outflows by merchant_clean.
-    If a merchant appears >= 3 times with median interval 25-35 days (monthly),
-    or 6-8 days (weekly), 12-16 days (bi-weekly), or 350-380 days (annual),
-    upsert into recurring_schedules.
-    Discretionary fast food/groceries and card payment transfers are excluded.
-    Returns count of upserted/updated recurring schedules.
+    Filters out investments, groceries, fast food, and transfers.
+    Only considers checking/spend accounts (ignoring retirement accounts).
     """
     result = await db.execute(
-        select(Transaction).where(
+        select(Transaction, Account)
+        .join(Account, Transaction.account_id == Account.id)
+        .where(
             Transaction.amount < 0,
             Transaction.is_internal_transfer == False,
             Transaction.merchant_clean != None,
+            Account.bucket.in_([BucketType.day_to_day, BucketType.short_term_debt]),
         ).order_by(Transaction.merchant_clean, Transaction.posted_at)
     )
-    transactions: list[Transaction] = list(result.scalars().all())
+    rows = list(result.all())
 
     # Group by clean merchant name
     by_merchant: dict[str, list[Transaction]] = defaultdict(list)
-    for tx in transactions:
+    for tx, acct in rows:
         key = (tx.merchant_clean or tx.merchant_raw)[:100].upper().strip()
         by_merchant[key].append(tx)
 
     upserted = 0
     for merchant, txs in by_merchant.items():
-        # Exclude obvious non-recurring discretionary or fast food
         if _NON_SUBSCRIPTION_RE.search(merchant):
             continue
 
-        # Require at least 3 occurrences for weekly/biweekly, or at least 2 with very consistent amounts for monthly
         if len(txs) < 2:
             continue
 
@@ -140,13 +139,11 @@ async def detect_recurring(db: AsyncSession) -> int:
             frequency = "monthly"
             cycle_days = 30
         elif 12 <= med_interval <= 16:
-            # Need at least 3 charges to establish a true bi-weekly recurring habit
             if len(txs) < 3:
                 continue
             frequency = "bi-weekly"
             cycle_days = 14
         elif 6 <= med_interval <= 8:
-            # Need at least 3 charges for weekly
             if len(txs) < 3:
                 continue
             frequency = "weekly"
@@ -160,11 +157,8 @@ async def detect_recurring(db: AsyncSession) -> int:
         amounts = [abs(float(t.amount)) for t in txs_sorted]
         expected = median(amounts)
         last_tx = txs_sorted[-1]
-
-        # Compute next expected date
         next_expected = last_tx.posted_at + timedelta(days=cycle_days)
 
-        # Upsert
         result2 = await db.execute(
             select(RecurringSchedule).where(RecurringSchedule.merchant_pattern == merchant)
         )
@@ -190,12 +184,12 @@ async def detect_recurring(db: AsyncSession) -> int:
             if not tx.is_recurring:
                 tx.is_recurring = True
 
-    # Also deactivate or purge any previously added non-subscription schedules (like Jack in the Box)
+    # Purge or deactivate any invalid schedules (investments, stocks, fast food)
     all_schedules_res = await db.execute(select(RecurringSchedule))
     all_schedules = all_schedules_res.scalars().all()
     for s in all_schedules:
         if _NON_SUBSCRIPTION_RE.search(s.merchant_pattern):
-            s.active = False
+            await db.delete(s)
 
     await db.commit()
     logger.info(f"Upserted {upserted} recurring schedules.")
@@ -207,13 +201,20 @@ async def check_price_hike(
     tx: Transaction,
 ) -> Optional[dict]:
     """
-    If this transaction matches a recurring schedule and exceeds tolerance,
-    return a dict describing the price hike alert.
+    If this transaction matches an active recurring subscription and exceeds tolerance,
+    return a dict describing the price hike. Excludes utilities and investments.
     """
     if not tx.merchant_clean:
         return None
 
     merchant_key = tx.merchant_clean[:100].upper().strip()
+    if _NON_SUBSCRIPTION_RE.search(merchant_key):
+        return None
+
+    # Don't alert on variable utility bills (Puget Sound Energy, etc.)
+    if any(u in merchant_key for u in ["ENER", "POWER", "WATER", "GAS", "ELECTRIC", "PUGET"]):
+        return None
+
     result = await db.execute(
         select(RecurringSchedule).where(
             RecurringSchedule.merchant_pattern == merchant_key,

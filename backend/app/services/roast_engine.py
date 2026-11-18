@@ -3,11 +3,12 @@ Roast Engine — heuristic scoring + LLM roast generation.
 
 Flow:
   1. evaluate_transactions() runs all heuristic rules and assigns roast_score.
-  2. For any tx with roast_score >= 50, call generate_roast() via LLM.
+  2. For any tx with roast_score >= 60, call generate_roast() via LLM.
   3. The roast message is stored back in the transaction and queued for delivery.
 """
 import json
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -21,28 +22,35 @@ from app.models import Account, BucketType, Transaction
 
 logger = logging.getLogger(__name__)
 
-ROAST_THRESHOLD = 50
+ROAST_THRESHOLD = 60
+
+# Non-roastable essential merchants / transactions
+_ESSENTIAL_OR_UTILITY_RE = re.compile(
+    r"(?i)(puget\s+sound\s+ener|pse\b|electric|water|utility|utilities|"
+    r"movement\s+mtg|mortgage|escrow|insurance|geico|state\s+farm|allstate|"
+    r"kaiser|regence|cigna|doctor|dental|clinic|hospital|pharmacy|walgreens|cvs|"
+    r"safeway|winco|fred\s+meyer|trader\s+joe|costco|kroger|wal-mart|walmart|"
+    r"target|grocery|supermarket|market\b|tax\s+withheld|internal\s+transfer)"
+)
 
 SYSTEM_PROMPT = (
-    "You are Marcus, an unhinged, hilarious, ruthlessly observant African American personal financial planner. "
-    "You talk with the sharp wit, deep presence, and tough love of an exasperated older brother or uncle "
-    "(think Bernie Mac meets Shannon Sharpe and Samuel L. Jackson). "
-    "You use natural, expressive cadence and colloquial phrases like 'Look here man...', 'Hold up, hold up, hold up', "
-    "'My brother in Christ...', 'Now you KNOW you ain't got no business...', 'Did you lose your whole damn mind?', "
-    "'Who you think paying these bills? Santa Claus?', 'Man listen...'. "
-    "Keep it under 300 characters (2 to 3 rhythmic, punchy sentences) so it hits hard and sounds amazing when spoken aloud via text-to-speech. "
-    "Explicitly call out the exact dollar amount, the merchant name, and the card used. "
-    "Bring up their financial reality (their credit card debt, burn rate, or repeat visits) to roast them. "
-    "Always end by demanding an excuse or asking what in the world they were thinking."
+    "You are Marcus, an unhinged, creative, laugh-out-loud funny African American personal financial planner. "
+    "You possess the electric delivery of Shannon Sharpe, the colorful comedic rage of Bernie Mac, and the cold reality-check wisdom of Samuel L. Jackson. "
+    "CRITICAL RULES FOR ROASTING:\n"
+    "1. Do NOT repeat formulaic catchphrases. Avoid starting every sentence with 'Hold up' or 'My brother in Christ'. Mix up your intros! Use wild, creative, and completely unhinged analogies (e.g. 'You out here swiping cards like you won the Powerball in your dreams', 'Did your brain take an unpaid personal day?', 'Who authorized this foolishness?!').\n"
+    "2. Explicitly cite the exact dollar amount and the merchant name.\n"
+    "3. Directly roast the specific absurdity of the item/merchant vs their financial situation.\n"
+    "4. Keep it strictly between 2 to 3 rhythmic, punchy, hilarious sentences (under 320 characters) so it sounds natural, energetic, and explosive when read aloud over audio.\n"
+    "5. Always close with a funny, aggressive demand for an excuse so you can figure out what they were thinking."
 )
 
 EXCUSE_SYSTEM_PROMPT = (
     "You are Marcus, an unhinged, hilarious African American personal financial planner reviewing a user's excuse for a purchase. "
-    "Evaluate their excuse and deliver a sharp, funny comeback in your signature voice (exasperated tough love, colloquial cadence, e.g. 'Man please, that is the sorriest excuse I ever heard...', 'Aight look, I\'ma let it slide this ONE time cause you gotta eat, but don\'t play with me...'). "
+    "Evaluate their excuse and deliver a sharp, creative, funny comeback in your signature comedic voice. "
     "Return ONLY valid JSON with keys: "
     "\"assigned_category\" (one of: Home Improvement, Dining, Hobbies, Groceries, Auto, Bullshit Impulse), "
     "\"justification_note\" (cleaned summary of the excuse, max 100 chars), "
-    "\"snarky_comeback\" (1 punchy sentence parting shot in Marcus's authentic voice, max 150 chars). "
+    "\"snarky_comeback\" (1 punchy, funny sentence parting shot in Marcus's authentic voice, max 150 chars). "
     "No markdown, no code fences — raw JSON only."
 )
 
@@ -64,10 +72,8 @@ def _get_llm_client() -> AsyncOpenAI:
 
 async def _get_safe_to_spend(db: AsyncSession) -> float:
     """Compute the True Safe-to-Spend metric."""
-    from sqlalchemy import select as sa_select
     from app.models import RecurringSchedule
 
-    # Sum day_to_day balances
     result = await db.execute(
         select(func.sum(Account.current_balance)).where(
             Account.bucket == BucketType.day_to_day,
@@ -76,7 +82,6 @@ async def _get_safe_to_spend(db: AsyncSession) -> float:
     )
     day_to_day = float(result.scalar() or 0)
 
-    # Sum absolute short_term_debt balances
     result = await db.execute(
         select(func.sum(Account.current_balance)).where(
             Account.bucket == BucketType.short_term_debt,
@@ -85,7 +90,6 @@ async def _get_safe_to_spend(db: AsyncSession) -> float:
     )
     debt_total = abs(float(result.scalar() or 0))
 
-    # Upcoming bills in next 14 days
     now = datetime.now(timezone.utc)
     result = await db.execute(
         select(func.sum(RecurringSchedule.expected_amount)).where(
@@ -113,21 +117,6 @@ async def _merchant_visits_last_n_days(
     return int(result.scalar() or 0)
 
 
-async def _category_spend_mtd(db: AsyncSession, account_id: str) -> float:
-    """Total outflow from the same account this calendar month."""
-    now = datetime.now(timezone.utc)
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    result = await db.execute(
-        select(func.sum(Transaction.amount)).where(
-            Transaction.account_id == account_id,
-            Transaction.amount < 0,
-            Transaction.is_internal_transfer == False,
-            Transaction.posted_at >= month_start,
-        )
-    )
-    return abs(float(result.scalar() or 0))
-
-
 async def _total_short_term_debt(db: AsyncSession) -> float:
     result = await db.execute(
         select(func.sum(Account.current_balance)).where(
@@ -139,67 +128,75 @@ async def _total_short_term_debt(db: AsyncSession) -> float:
 
 async def score_transaction(db: AsyncSession, tx: Transaction, account: Account) -> int:
     """
-    Apply all heuristic rules and return a roast_score integer.
-    Only called for outflows on spending buckets.
+    Apply heuristic rules and return a roast_score integer.
+    Utilities, groceries, medical, and essentials are explicitly protected (score = 0).
     """
+    merchant = (tx.merchant_clean or tx.merchant_raw or "").strip().upper()
+    amount = abs(float(tx.amount))
+
+    # Protect essentials from ever being roasted
+    if _ESSENTIAL_OR_UTILITY_RE.search(merchant):
+        return 0
+
     score = 0
     triggers: list[str] = []
-    amount = abs(float(tx.amount))
-    merchant = (tx.merchant_clean or tx.merchant_raw).upper()
     local_tz = pytz.timezone(settings.TIMEZONE)
     local_time = tx.posted_at.astimezone(local_tz)
 
-    # --- Rule 1: Merchant Velocity (>= 3 visits in rolling 7 days) ---
+    # --- Rule 1: High Velocity Habit (>= 3 visits in rolling 7 days to same discretionary spot) ---
     if tx.merchant_clean:
         visits_7d = await _merchant_visits_last_n_days(db, tx.merchant_clean, 7)
         if visits_7d >= 3:
             score += 50
-            triggers.append("Merchant Velocity")
+            triggers.append("Discretionary Habit Velocity")
 
-    # --- Rule 2: Home Depot Project Creep ---
-    hd_30d_result = await db.execute(
-        select(func.sum(Transaction.amount)).where(
-            Transaction.merchant_clean.ilike("%home depot%"),
-            Transaction.amount < 0,
-            Transaction.is_internal_transfer == False,
-            Transaction.posted_at >= datetime.now(timezone.utc) - timedelta(days=30),
+    # --- Rule 2: Home Depot Project Creep (Only if non-essential runaway spending) ---
+    if "HOME DEPOT" in merchant:
+        hd_30d_result = await db.execute(
+            select(func.sum(Transaction.amount)).where(
+                Transaction.merchant_clean.ilike("%home depot%"),
+                Transaction.amount < 0,
+                Transaction.is_internal_transfer == False,
+                Transaction.posted_at >= datetime.now(timezone.utc) - timedelta(days=30),
+            )
         )
-    )
-    hd_30d_spend = abs(float(hd_30d_result.scalar() or 0))
-    if ("HOME DEPOT" in merchant or account.name.upper().find("HOME DEPOT") != -1) and hd_30d_spend > 150:
-        score += 60
-        triggers.append("Home Depot Project Creep")
+        hd_30d_spend = abs(float(hd_30d_result.scalar() or 0))
+        if hd_30d_spend > 350 and amount > 50:
+            score += 65
+            triggers.append("Home Depot Runaway Project")
 
-    # --- Rule 3: Debt-Float Violation ---
+    # --- Rule 3: Debt-Float Violation on Pure Discretionary Luxury/Dining ---
+    # Only applies to discretionary purchases over $65 when carrying heavy credit debt
     total_debt = await _total_short_term_debt(db)
     safe_to_spend = await _get_safe_to_spend(db)
-    if amount > 40 and (total_debt > settings.DEBT_ALERT_THRESHOLD or safe_to_spend < settings.SAFE_TO_SPEND_ALERT_THRESHOLD):
-        score += 50
-        triggers.append("Debt-Float Violation")
+    if amount > 65 and (total_debt > settings.DEBT_ALERT_THRESHOLD or safe_to_spend < settings.SAFE_TO_SPEND_ALERT_THRESHOLD):
+        score += 45
+        triggers.append("Debt-Float Discretionary Spend")
 
-    # --- Rule 4: Late-Night / Weekend Impulse ---
+    # --- Rule 4: Late-Night Impulse (Bars, Late Delivery, Night Shopping) ---
     hour = local_time.hour
-    is_late_night = hour >= 22 or hour < 4
-    if is_late_night and amount > 35:
+    is_late_night = hour >= 23 or hour < 4
+    if is_late_night and amount > 45:
         score += 40
         triggers.append("Late-Night Impulse")
 
-    # --- Rule 5: Blacklist Merchant ---
+    # --- Rule 5: Blacklist Discretionary Merchants (Gambling, OnlyFans, Video Game MTX) ---
     blacklist = settings.get_blacklist()
     if any(kw in merchant for kw in blacklist):
         score += 100
         triggers.append("Blacklist Merchant")
 
-    # Store triggers in a temporary attribute for the roast generator
     tx._roast_triggers = triggers  # type: ignore[attr-defined]
     return score
 
 
 async def evaluate_transactions(db: AsyncSession) -> list[Transaction]:
     """
-    Score all un-roasted outflow transactions in spending buckets.
-    Returns list of transactions that crossed the roast threshold.
+    Score un-roasted outflow transactions in spending buckets.
+    Only evaluates transactions posted within the last 5 days so old transactions are never re-roasted.
     """
+    five_days_ago = datetime.now(timezone.utc) - timedelta(days=5)
+
     result = await db.execute(
         select(Transaction, Account)
         .join(Account, Transaction.account_id == Account.id)
@@ -207,6 +204,7 @@ async def evaluate_transactions(db: AsyncSession) -> list[Transaction]:
             Transaction.amount < 0,
             Transaction.is_internal_transfer == False,
             Transaction.roast_sent == False,
+            Transaction.posted_at >= five_days_ago,
             Account.bucket.in_([BucketType.day_to_day, BucketType.short_term_debt]),
         )
     )
@@ -229,8 +227,7 @@ async def evaluate_transactions(db: AsyncSession) -> list[Transaction]:
 
 async def generate_roast(db: AsyncSession, tx: Transaction) -> Optional[str]:
     """
-    Build the context payload and call the LLM to generate a roast message.
-    Stores the result in tx.roast_message.
+    Build the context payload and call the LLM to generate a punchy, creative roast message.
     """
     result = await db.execute(select(Account).where(Account.id == tx.account_id))
     account = result.scalar_one_or_none()
@@ -238,15 +235,15 @@ async def generate_roast(db: AsyncSession, tx: Transaction) -> Optional[str]:
         return None
 
     visits_30d = await _merchant_visits_last_n_days(db, tx.merchant_clean or tx.merchant_raw, 30)
-    spend_mtd = await _category_spend_mtd(db, tx.account_id)
     total_debt = await _total_short_term_debt(db)
     safe = await _get_safe_to_spend(db)
 
     user_prompt = (
-        f"Roast this user who spent ${abs(float(tx.amount)):.2f} at {tx.merchant_clean or tx.merchant_raw} "
+        f"Roast this purchase right now: The user spent ${abs(float(tx.amount)):.2f} at '{tx.merchant_clean or tx.merchant_raw}' "
         f"using their {account.display_name} card. "
-        f"Context: {visits_30d} visits to this merchant in 30 days, total short-term credit card debt is ${total_debt:,.2f}, "
-        f"safe-to-spend is ${safe:,.2f}. Demand an excuse to categorize it."
+        f"User Financial Stats: {visits_30d} visits here in 30 days, current credit card debt is ${total_debt:,.2f}, "
+        f"true liquid safe-to-spend is ${safe:,.2f}. "
+        f"Make this comedic, unpredictable, and savage without using canned cliché openings. Demand their excuse."
     )
 
     client = _get_llm_client()
@@ -257,10 +254,10 @@ async def generate_roast(db: AsyncSession, tx: Transaction) -> Optional[str]:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
-            max_tokens=2048,
-            temperature=0.9,
+            max_tokens=400,
+            temperature=0.95,
         )
-        roast = response.choices[0].message.content or ""
+        roast = (response.choices[0].message.content or "").strip()
         tx.roast_message = roast[:1000]
         logger.info(f"Generated roast for tx {tx.id}: {roast[:80]}...")
         return roast
@@ -290,11 +287,11 @@ async def process_excuse(db: AsyncSession, user_reply: str) -> Optional[str]:
     )
     tx = result.scalar_one_or_none()
     if not tx:
-        return "I don't have any recent purchases waiting for your excuse. Nice try."
+        return "I don't have any recent purchases waiting on an excuse from you right now. You're off the hook for this second."
 
     client = _get_llm_client()
     prompt = (
-        f"The user was roasted for this transaction: {tx.merchant_raw} ${abs(float(tx.amount)):.2f}. "
+        f"The user was roasted for spending ${abs(float(tx.amount)):.2f} at {tx.merchant_raw}. "
         f"Their excuse: \"{user_reply}\". "
         "Return JSON with assigned_category, justification_note, and snarky_comeback."
     )
@@ -306,19 +303,22 @@ async def process_excuse(db: AsyncSession, user_reply: str) -> Optional[str]:
                 {"role": "system", "content": EXCUSE_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=2048,
-            temperature=0.7,
+            max_tokens=300,
+            temperature=0.8,
         )
-        raw = response.choices[0].message.content or "{}"
-        data = json.loads(raw)
+        raw_json = response.choices[0].message.content or "{}"
+        if "```" in raw_json:
+            raw_json = raw_json.split("```")[1]
+            if raw_json.startswith("json"):
+                raw_json = raw_json[4:]
 
-        tx.category = data.get("assigned_category", "Uncategorized")
-        tx.user_justification = data.get("justification_note", user_reply[:200])
-        comeback = data.get("snarky_comeback", "Fine. I'll allow it. For now.")
+        data = json.loads(raw_json.strip())
+        tx.category = data.get("assigned_category", tx.category)
+        tx.user_justification = data.get("justification_note", user_reply[:100])
         await db.commit()
-        return comeback
+        return data.get("snarky_comeback", "Alright, I logged that. Don't let me catch you slipping again.")
     except Exception as e:
-        logger.error(f"Excuse processing failed: {e}")
-        tx.user_justification = user_reply[:200]
+        logger.error(f"Failed to process excuse via LLM: {e}")
+        tx.user_justification = user_reply[:100]
         await db.commit()
-        return "I couldn't process your excuse properly, but I saved your rambling."
+        return "Excuse noted, but you're on thin ice."

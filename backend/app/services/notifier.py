@@ -1,53 +1,43 @@
-"""
-Notifier service — multi-driver outbound messaging + inbound reply routing.
-
-Supported drivers:
-  1. Telegram Bot (primary, two-way text + neural voice notes via edge-tts)
-  2. Carrier Email-to-SMS via SMTP (zero-cost, outbound SMS directly to cell phone)
-"""
 import logging
-from email.mime.text import MIMEText
+import json
 from typing import Optional
-
+from email.mime.text import MIMEText
 import httpx
-
 from app.config import settings
-from app.services.tts import generate_speech
+from app.services.tts import synthesize_speech
 
 logger = logging.getLogger(__name__)
 
-
 # ---------------------------------------------------------------------------
-# Telegram
+# Telegram Bot Delivery (Expressive Voice + Text Caption)
 # ---------------------------------------------------------------------------
 
 async def send_telegram(message: str, chat_id: Optional[str] = None) -> bool:
-    """
-    Send a text message via Telegram Bot API.
-    Returns True on success, False on failure.
-    """
+    """Send a formatted text message to Telegram."""
     token = settings.TELEGRAM_BOT_TOKEN
-    cid = chat_id or settings.TELEGRAM_CHAT_ID
-
-    if not token or not cid:
-        logger.warning("Telegram not configured — skipping notification.")
+    target_chat = chat_id or settings.TELEGRAM_CHAT_ID
+    if not token or not target_chat:
+        logger.warning("Telegram credentials not configured. Skipping send.")
         return False
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {
-        "chat_id": cid,
+        "chat_id": target_chat,
         "text": message,
         "parse_mode": "HTML",
     }
 
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.post(url, json=payload)
-            response.raise_for_status()
-            logger.info(f"Telegram text message sent: {message[:60]}...")
-            return True
+        async with httpx.AsyncClient(timeout=15) as client:
+            res = await client.post(url, json=payload)
+            if res.status_code == 200:
+                logger.info("Telegram text message sent successfully.")
+                return True
+            else:
+                logger.error(f"Telegram text send error: {res.status_code} {res.text}")
+                return False
     except Exception as e:
-        logger.error(f"Telegram send failed: {e}")
+        logger.error(f"Telegram request failed: {e}")
         return False
 
 
@@ -57,84 +47,73 @@ async def send_telegram_voice(
     chat_id: Optional[str] = None,
 ) -> bool:
     """
-    Send an audio memo / voice message via Telegram Bot API (/sendVoice).
-    Telegram displays this as an interactive waveform voice message.
+    Send an audio file using sendVoice so Telegram displays an inline waveform player.
     """
     token = settings.TELEGRAM_BOT_TOKEN
-    cid = chat_id or settings.TELEGRAM_CHAT_ID
-
-    if not token or not cid or not audio_bytes:
-        logger.warning("Telegram voice note missing token, chat_id, or audio.")
+    target_chat = chat_id or settings.TELEGRAM_CHAT_ID
+    if not token or not target_chat:
         return False
 
-    is_wav = audio_bytes[:4] == b"RIFF"
-    filename = "marcus_roast.wav" if is_wav else "marcus_roast.mp3"
-    mime = "audio/wav" if is_wav else "audio/mpeg"
-
     url = f"https://api.telegram.org/bot{token}/sendVoice"
-    files = {
-        "voice": (filename, audio_bytes, mime)
-    }
-    data = {
-        "chat_id": cid,
-    }
-    if caption:
-        data["caption"] = caption[:1024]
-        data["parse_mode"] = "HTML"
-
     try:
-        async with httpx.AsyncClient(timeout=25) as client:
-            response = await client.post(url, data=data, files=files)
-            response.raise_for_status()
-            logger.info("Telegram voice message delivered successfully.")
-            return True
+        files = {
+            "voice": ("voice.mp3", audio_bytes, "audio/mpeg")
+        }
+        data = {
+            "chat_id": target_chat,
+        }
+        if caption:
+            data["caption"] = caption[:1024]
+            data["parse_mode"] = "HTML"
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            res = await client.post(url, data=data, files=files)
+            if res.status_code == 200:
+                logger.info("Telegram voice note delivered successfully.")
+                return True
+            else:
+                logger.warning(f"sendVoice failed ({res.status_code}): {res.text}. Trying sendAudio...")
+                return False
     except Exception as e:
-        logger.error(f"Telegram voice send failed: {e}")
+        logger.error(f"Telegram voice request failed: {e}")
         return False
 
 
 async def send_telegram_audio(
     audio_bytes: bytes,
     caption: Optional[str] = None,
-    title: str = "Marcus Financial Planning Review",
-    performer: str = "Marcus",
     chat_id: Optional[str] = None,
 ) -> bool:
-    """
-    Send an audio track via Telegram Bot API (/sendAudio).
-    Telegram displays this as a full native audio player card with play/pause and progress slider.
-    """
+    """Fallback audio delivery using sendAudio."""
     token = settings.TELEGRAM_BOT_TOKEN
-    cid = chat_id or settings.TELEGRAM_CHAT_ID
-
-    if not token or not cid or not audio_bytes:
+    target_chat = chat_id or settings.TELEGRAM_CHAT_ID
+    if not token or not target_chat:
         return False
 
-    is_wav = audio_bytes[:4] == b"RIFF"
-    filename = "marcus_roast.wav" if is_wav else "marcus_roast.mp3"
-    mime = "audio/wav" if is_wav else "audio/mpeg"
-
     url = f"https://api.telegram.org/bot{token}/sendAudio"
-    files = {
-        "audio": (filename, audio_bytes, mime)
-    }
-    data = {
-        "chat_id": cid,
-        "title": title,
-        "performer": performer,
-    }
-    if caption:
-        data["caption"] = caption[:1024]
-        data["parse_mode"] = "HTML"
-
     try:
+        files = {
+            "audio": ("marcus_roast.mp3", audio_bytes, "audio/mpeg")
+        }
+        data = {
+            "chat_id": target_chat,
+            "title": "Marcus — Financial Planner",
+            "performer": "Marcus",
+        }
+        if caption:
+            data["caption"] = caption[:1024]
+            data["parse_mode"] = "HTML"
+
         async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.post(url, data=data, files=files)
-            response.raise_for_status()
-            logger.info("Telegram audio delivered successfully.")
-            return True
+            res = await client.post(url, data=data, files=files)
+            if res.status_code == 200:
+                logger.info("Telegram audio delivered successfully.")
+                return True
+            else:
+                logger.error(f"sendAudio failed ({res.status_code}): {res.text}")
+                return False
     except Exception as e:
-        logger.error(f"Telegram audio send failed: {e}")
+        logger.error(f"Telegram audio request failed: {e}")
         return False
 
 
@@ -145,89 +124,50 @@ async def voice_and_send_telegram(
     chat_id: Optional[str] = None,
 ) -> bool:
     """
-    Generate speech with Gemini TTS and deliver as audio + text to Telegram.
-    Tries voice message first, falls back to native audio player, then plain text.
+    Synthesize audio via Gemini TTS and send as Telegram Voice Note with accompanying text caption.
     """
-    audio = await generate_speech(text, voice=voice)
+    logger.info("Synthesizing speech via Gemini TTS...")
+    audio = await synthesize_speech(text, voice=voice)
     caption = f"{header}{text}"
 
     if audio:
         sent_voice = await send_telegram_voice(audio, caption=caption, chat_id=chat_id)
         if sent_voice:
             return True
-
         sent_audio = await send_telegram_audio(audio, caption=caption, chat_id=chat_id)
         if sent_audio:
             return True
 
+    logger.warning("TTS audio generation/delivery failed. Falling back to text message.")
     return await send_telegram(caption, chat_id=chat_id)
-
-
-async def set_telegram_webhook(webhook_url: str) -> bool:
-    """
-    Register the FastAPI webhook endpoint with Telegram so inbound messages
-    are forwarded here instead of requiring polling.
-    """
-    token = settings.TELEGRAM_BOT_TOKEN
-    if not token:
-        return False
-
-    url = f"https://api.telegram.org/bot{token}/setWebhook"
-    async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.post(url, json={"url": webhook_url})
-        data = response.json()
-        logger.info(f"Telegram webhook registration: {data}")
-        return data.get("ok", False)
-
-
-# ---------------------------------------------------------------------------
-# Carrier Email-to-SMS (SMTP)
-# ---------------------------------------------------------------------------
-
-async def send_sms_via_email(message: str) -> bool:
-    """
-    Send an SMS via carrier email gateway (e.g. 5551234567@vtext.com).
-    Requires SMTP credentials and SMS_GATEWAY_EMAIL in settings.
-    """
-    if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASS, settings.SMS_GATEWAY_EMAIL]):
-        logger.debug("SMTP/SMS not fully configured — skipping.")
-        return False
-
-    try:
-        import aiosmtplib
-
-        # Standard SMS 160 character limit per segment
-        msg = MIMEText(message[:320])
-        msg["From"] = settings.SMTP_USER
-        msg["To"] = settings.SMS_GATEWAY_EMAIL
-        msg["Subject"] = ""  # Carrier gateways ignore or prepend subject
-
-        await aiosmtplib.send(
-            msg,
-            hostname=settings.SMTP_HOST,
-            port=settings.SMTP_PORT,
-            username=settings.SMTP_USER,
-            password=settings.SMTP_PASS,
-            start_tls=True,
-        )
-        logger.info(f"SMS via email gateway sent to {settings.SMS_GATEWAY_EMAIL}.")
-        return True
-    except Exception as e:
-        logger.error(f"SMTP send failed: {e}")
-        return False
 
 
 # ---------------------------------------------------------------------------
 # Unified Dispatcher
 # ---------------------------------------------------------------------------
 
-async def notify(message: str) -> bool:
+async def notify(payload) -> bool:
     """
-    Send a basic notification to Telegram.
+    Send an informational notification to Telegram, formatted properly (never raw JSON).
     """
-    if settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_CHAT_ID:
-        return await send_telegram(message)
-    return False
+    if not (settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_CHAT_ID):
+        return False
+
+    if isinstance(payload, dict):
+        # Format price hike or alert nicely
+        merchant = payload.get("merchant", "Subscription")
+        actual = payload.get("actual_amount", 0.0)
+        expected = payload.get("expected_amount", 0.0)
+        diff = payload.get("diff", 0.0)
+        pct = payload.get("pct_increase", 0.0)
+        formatted = (
+            f"📈 <b>Subscription Price Alert: {merchant}</b>\n\n"
+            f"Charged: <b>${actual:,.2f}</b> (normally ${expected:,.2f})\n"
+            f"Increase: <b>+${diff:,.2f} (+{pct:.1f}%)</b>"
+        )
+        return await send_telegram(formatted)
+
+    return await send_telegram(str(payload))
 
 
 async def send_roast(tx_id: str, roast_message: str, voice: Optional[str] = None) -> bool:
