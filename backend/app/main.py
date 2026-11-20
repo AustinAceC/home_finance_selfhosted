@@ -850,8 +850,8 @@ async def roast_real_purchases(
     candidates.sort(key=lambda c: (c[2], abs(float(c[0].amount))), reverse=True)
 
     roasted_items = []
-    # Roast top 3 real transactions
-    top_candidates = candidates[:3]
+    # Roast top 1 candidate with immediate response; dispatch audio in background
+    top_candidates = candidates[:1]
     for idx, (tx, account, score) in enumerate(top_candidates):
         roast = await generate_roast(
             db, tx, total_debt=total_debt, safe=safe_to_spend
@@ -860,12 +860,13 @@ async def roast_real_purchases(
         await db.commit()
 
         dispatched = False
-        # Dispatch the #1 highest-priority real roast via Voice Note + SMS
+        # Dispatch the #1 highest-priority real roast via Voice Note + SMS in background
         if dispatch_latest and idx == 0 and roast:
             try:
-                dispatched = await send_roast(tx.id, roast)
+                asyncio.create_task(send_roast(tx.id, roast))
+                dispatched = True
             except Exception as e:
-                logger.error(f"Failed to dispatch roast to Telegram: {e}")
+                logger.error(f"Failed to schedule dispatch roast to Telegram: {e}")
             try:
                 await send_live_toast(f"Marcus: {roast[:180]}")
             except Exception:
