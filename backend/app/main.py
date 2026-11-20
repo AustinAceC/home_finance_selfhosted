@@ -10,6 +10,7 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -132,6 +133,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    tb = traceback.format_exc()
+    logger.error(f"Unhandled exception on {request.method} {request.url}: {tb}")
+    return JSONResponse(
+        status_code=500,
+        content={"error": str(exc), "traceback": tb.splitlines()},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Allow-Methods": "*",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -807,7 +823,7 @@ async def roast_real_purchases(
 
     candidates = []
     for tx, account in rows:
-        m_name = (tx.merchant_clean or tx.merchant_raw).upper()
+        m_name = (tx.merchant_clean or tx.merchant_raw or "").upper()
         # Skip mortgage payments, wire transfers, investment settlements
         if any(skip in m_name for skip in ["MTG", "WIRE", "TRANSFER", "JOURNAL", "PAYROLL"]):
             continue
@@ -871,7 +887,7 @@ async def debug_test_voice(text: Optional[str] = None, voice: Optional[str] = No
         "status": "success",
         "voice": voice or "default",
         "text": test_text,
-        "audio_bytes": len(audio),
+        "audio_bytes": len(audio) if audio else 0,
         "voice_sent": voice_res,
         "audio_sent": audio_res,
         "text_sent": text_res,

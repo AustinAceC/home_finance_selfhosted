@@ -114,9 +114,11 @@ export default function DashboardPage() {
       }
       await loadData();
     } catch (err: any) {
-      alert("Failed to roast real purchases: " + err.message);
+      console.error("Roast evaluation error:", err);
+      setSyncFeedback("Evaluation notice: " + (err.message || "Failed to contact roast engine. Check backend."));
     } finally {
       setTestingRoast(false);
+      setTimeout(() => setSyncFeedback(null), 8000);
     }
   };
 

@@ -63,9 +63,8 @@ async def generate_speech(
     # 1. Try Google Gemini TTS if LLM_API_KEY is available
     if settings.LLM_API_KEY:
         models = [
-            "gemini-3.8-flash-tts",
-            "gemini-3.8-flash-lite-tts",
             "gemini-2.5-flash-preview-tts",
+            "gemini-2.5-pro-preview-tts",
         ]
         payload = {
             "contents": [
@@ -133,3 +132,8 @@ async def generate_speech(
     except Exception as e:
         logger.error(f"TTS generation completely failed: {e}")
         return b""
+
+
+# Alias for backward compatibility across modules
+synthesize_speech = generate_speech
+

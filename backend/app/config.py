@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # --- LLM (Gemini via OpenAI-compatible endpoint) ---
     LLM_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
     LLM_API_KEY: str = ""
-    LLM_MODEL: str = "gemini-3.5-flash"
+    LLM_MODEL: str = "gemini-3.8-flash"
 
     # --- Telegram ---
     TELEGRAM_BOT_TOKEN: Optional[str] = None
