@@ -813,10 +813,46 @@ async def roast_real_purchases(
     from app.services.shield_tv import send_live_toast
 
     fourteen_days_ago = datetime.now(timezone.utc) - timedelta(days=14)
+    cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
+    cutoff_30d = datetime.now(timezone.utc) - timedelta(days=30)
+
     total_debt = await _total_short_term_debt(db)
     safe_to_spend = await _get_safe_to_spend(db)
 
-    # Find un-roasted outflow transactions in spending buckets (excluding mortgage & internal transfers)
+    # Precompute merchant visit counts and Home Depot spend in batch queries
+    c7_res = await db.execute(
+        select(Transaction.merchant_clean, func.count(Transaction.id))
+        .where(
+            Transaction.posted_at >= cutoff_7d,
+            Transaction.is_internal_transfer == False,
+            Transaction.merchant_clean != None,
+        )
+        .group_by(Transaction.merchant_clean)
+    )
+    counts_7d = dict(c7_res.all())
+
+    c30_res = await db.execute(
+        select(Transaction.merchant_clean, func.count(Transaction.id))
+        .where(
+            Transaction.posted_at >= cutoff_30d,
+            Transaction.is_internal_transfer == False,
+            Transaction.merchant_clean != None,
+        )
+        .group_by(Transaction.merchant_clean)
+    )
+    counts_30d = dict(c30_res.all())
+
+    hd_res = await db.execute(
+        select(func.sum(Transaction.amount)).where(
+            Transaction.merchant_clean.ilike("%home depot%"),
+            Transaction.amount < 0,
+            Transaction.is_internal_transfer == False,
+            Transaction.posted_at >= cutoff_30d,
+        )
+    )
+    hd_30d_spend = abs(float(hd_res.scalar() or 0))
+
+    # Find un-roasted outflow transactions in spending buckets (excluding mortgage, payments & internal transfers)
     result = await db.execute(
         select(Transaction, Account)
         .join(Account, Transaction.account_id == Account.id)
@@ -836,12 +872,17 @@ async def roast_real_purchases(
     candidates = []
     for tx, account in rows:
         m_name = (tx.merchant_clean or tx.merchant_raw or "").upper()
-        # Skip mortgage payments, wire transfers, investment settlements
-        if any(skip in m_name for skip in ["MTG", "WIRE", "TRANSFER", "JOURNAL", "PAYROLL"]):
+        # Skip mortgage payments, card payoffs, wire transfers, investment settlements
+        if any(skip in m_name for skip in ["MTG", "WIRE", "TRANSFER", "JOURNAL", "PAYROLL", "PAYMENT", "AUTOPAY", "PAYOFF"]):
             continue
         
+        v7 = counts_7d.get(tx.merchant_clean, 0) if tx.merchant_clean else 0
         score = await score_transaction(
-            db, tx, account, total_debt=total_debt, safe_to_spend=safe_to_spend
+            db, tx, account,
+            total_debt=total_debt,
+            safe_to_spend=safe_to_spend,
+            visits_7d=v7,
+            hd_30d_spend=hd_30d_spend,
         )
         tx.roast_score = score
         candidates.append((tx, account, score))
@@ -853,8 +894,9 @@ async def roast_real_purchases(
     # Roast top 1 candidate with immediate response; dispatch audio in background
     top_candidates = candidates[:1]
     for idx, (tx, account, score) in enumerate(top_candidates):
+        v30 = counts_30d.get(tx.merchant_clean, 0) if tx.merchant_clean else 0
         roast = await generate_roast(
-            db, tx, total_debt=total_debt, safe=safe_to_spend
+            db, tx, total_debt=total_debt, safe=safe_to_spend, visits_30d=v30
         )
         tx.roast_sent = True
         await db.commit()

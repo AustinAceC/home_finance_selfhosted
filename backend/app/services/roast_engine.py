@@ -132,6 +132,8 @@ async def score_transaction(
     account: Account,
     total_debt: Optional[float] = None,
     safe_to_spend: Optional[float] = None,
+    visits_7d: Optional[int] = None,
+    hd_30d_spend: Optional[float] = None,
 ) -> int:
     """
     Apply heuristic rules and return a roast_score integer.
@@ -151,22 +153,24 @@ async def score_transaction(
 
     # --- Rule 1: High Velocity Habit (>= 3 visits in rolling 7 days to same discretionary spot) ---
     if tx.merchant_clean:
-        visits_7d = await _merchant_visits_last_n_days(db, tx.merchant_clean, 7)
+        if visits_7d is None:
+            visits_7d = await _merchant_visits_last_n_days(db, tx.merchant_clean, 7)
         if visits_7d >= 3:
             score += 50
             triggers.append("Discretionary Habit Velocity")
 
     # --- Rule 2: Home Depot Project Creep (Only if non-essential runaway spending) ---
     if "HOME DEPOT" in merchant:
-        hd_30d_result = await db.execute(
-            select(func.sum(Transaction.amount)).where(
-                Transaction.merchant_clean.ilike("%home depot%"),
-                Transaction.amount < 0,
-                Transaction.is_internal_transfer == False,
-                Transaction.posted_at >= datetime.now(timezone.utc) - timedelta(days=30),
+        if hd_30d_spend is None:
+            hd_30d_result = await db.execute(
+                select(func.sum(Transaction.amount)).where(
+                    Transaction.merchant_clean.ilike("%home depot%"),
+                    Transaction.amount < 0,
+                    Transaction.is_internal_transfer == False,
+                    Transaction.posted_at >= datetime.now(timezone.utc) - timedelta(days=30),
+                )
             )
-        )
-        hd_30d_spend = abs(float(hd_30d_result.scalar() or 0))
+            hd_30d_spend = abs(float(hd_30d_result.scalar() or 0))
         if hd_30d_spend > 350 and amount > 50:
             score += 65
             triggers.append("Home Depot Runaway Project")
@@ -239,6 +243,7 @@ async def generate_roast(
     tx: Transaction,
     total_debt: Optional[float] = None,
     safe: Optional[float] = None,
+    visits_30d: Optional[int] = None,
 ) -> Optional[str]:
     """
     Build the context payload and call the LLM to generate a punchy, creative roast message.
@@ -248,7 +253,8 @@ async def generate_roast(
     if not account:
         return None
 
-    visits_30d = await _merchant_visits_last_n_days(db, tx.merchant_clean or tx.merchant_raw, 30)
+    if visits_30d is None:
+        visits_30d = await _merchant_visits_last_n_days(db, tx.merchant_clean or tx.merchant_raw, 30)
     if total_debt is None:
         total_debt = await _total_short_term_debt(db)
     if safe is None:
