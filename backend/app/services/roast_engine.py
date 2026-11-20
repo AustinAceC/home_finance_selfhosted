@@ -126,7 +126,13 @@ async def _total_short_term_debt(db: AsyncSession) -> float:
     return abs(float(result.scalar() or 0))
 
 
-async def score_transaction(db: AsyncSession, tx: Transaction, account: Account) -> int:
+async def score_transaction(
+    db: AsyncSession,
+    tx: Transaction,
+    account: Account,
+    total_debt: Optional[float] = None,
+    safe_to_spend: Optional[float] = None,
+) -> int:
     """
     Apply heuristic rules and return a roast_score integer.
     Utilities, groceries, medical, and essentials are explicitly protected (score = 0).
@@ -167,11 +173,14 @@ async def score_transaction(db: AsyncSession, tx: Transaction, account: Account)
 
     # --- Rule 3: Debt-Float Violation on Pure Discretionary Luxury/Dining ---
     # Only applies to discretionary purchases over $65 when carrying heavy credit debt
-    total_debt = await _total_short_term_debt(db)
-    safe_to_spend = await _get_safe_to_spend(db)
-    if amount > 65 and (total_debt > settings.DEBT_ALERT_THRESHOLD or safe_to_spend < settings.SAFE_TO_SPEND_ALERT_THRESHOLD):
-        score += 45
-        triggers.append("Debt-Float Discretionary Spend")
+    if amount > 65:
+        if total_debt is None:
+            total_debt = await _total_short_term_debt(db)
+        if safe_to_spend is None:
+            safe_to_spend = await _get_safe_to_spend(db)
+        if total_debt > settings.DEBT_ALERT_THRESHOLD or safe_to_spend < settings.SAFE_TO_SPEND_ALERT_THRESHOLD:
+            score += 45
+            triggers.append("Debt-Float Discretionary Spend")
 
     # --- Rule 4: Late-Night Impulse (Bars, Late Delivery, Night Shopping) ---
     hour = local_time.hour
@@ -225,7 +234,12 @@ async def evaluate_transactions(db: AsyncSession) -> list[Transaction]:
 # LLM Roast Generator
 # ---------------------------------------------------------------------------
 
-async def generate_roast(db: AsyncSession, tx: Transaction) -> Optional[str]:
+async def generate_roast(
+    db: AsyncSession,
+    tx: Transaction,
+    total_debt: Optional[float] = None,
+    safe: Optional[float] = None,
+) -> Optional[str]:
     """
     Build the context payload and call the LLM to generate a punchy, creative roast message.
     """
@@ -235,8 +249,10 @@ async def generate_roast(db: AsyncSession, tx: Transaction) -> Optional[str]:
         return None
 
     visits_30d = await _merchant_visits_last_n_days(db, tx.merchant_clean or tx.merchant_raw, 30)
-    total_debt = await _total_short_term_debt(db)
-    safe = await _get_safe_to_spend(db)
+    if total_debt is None:
+        total_debt = await _total_short_term_debt(db)
+    if safe is None:
+        safe = await _get_safe_to_spend(db)
 
     user_prompt = (
         f"Roast this purchase right now: The user spent ${abs(float(tx.amount)):.2f} at '{tx.merchant_clean or tx.merchant_raw}' "

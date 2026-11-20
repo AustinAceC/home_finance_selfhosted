@@ -803,9 +803,18 @@ async def roast_real_purchases(
     generate Marcus roasts for them, save them to the database, and optionally dispatch
     the top real roast to Telegram Voice Note + Carrier SMS.
     """
-    from app.services.roast_engine import score_transaction, generate_roast
+    from app.services.roast_engine import (
+        score_transaction,
+        generate_roast,
+        _total_short_term_debt,
+        _get_safe_to_spend,
+    )
     from app.services.notifier import send_roast
     from app.services.shield_tv import send_live_toast
+
+    fourteen_days_ago = datetime.now(timezone.utc) - timedelta(days=14)
+    total_debt = await _total_short_term_debt(db)
+    safe_to_spend = await _get_safe_to_spend(db)
 
     # Find un-roasted outflow transactions in spending buckets (excluding mortgage & internal transfers)
     result = await db.execute(
@@ -814,10 +823,13 @@ async def roast_real_purchases(
         .where(
             Transaction.amount < -15.0,
             Transaction.is_internal_transfer == False,
+            Transaction.roast_sent == False,
+            Transaction.posted_at >= fourteen_days_ago,
             Transaction.id.not_like("TRN-TEST-%"),
             Account.bucket.in_([BucketType.day_to_day, BucketType.short_term_debt]),
         )
         .order_by(Transaction.posted_at.desc())
+        .limit(40)
     )
     rows = result.all()
 
@@ -828,7 +840,9 @@ async def roast_real_purchases(
         if any(skip in m_name for skip in ["MTG", "WIRE", "TRANSFER", "JOURNAL", "PAYROLL"]):
             continue
         
-        score = await score_transaction(db, tx, account)
+        score = await score_transaction(
+            db, tx, account, total_debt=total_debt, safe_to_spend=safe_to_spend
+        )
         tx.roast_score = score
         candidates.append((tx, account, score))
 
@@ -839,16 +853,21 @@ async def roast_real_purchases(
     # Roast top 3 real transactions
     top_candidates = candidates[:3]
     for idx, (tx, account, score) in enumerate(top_candidates):
-        roast = await generate_roast(db, tx)
+        roast = await generate_roast(
+            db, tx, total_debt=total_debt, safe=safe_to_spend
+        )
         tx.roast_sent = True
         await db.commit()
 
         dispatched = False
         # Dispatch the #1 highest-priority real roast via Voice Note + SMS
         if dispatch_latest and idx == 0 and roast:
-            dispatched = await send_roast(tx.id, roast)
             try:
-                await send_live_toast(f"💸 {roast[:180]}")
+                dispatched = await send_roast(tx.id, roast)
+            except Exception as e:
+                logger.error(f"Failed to dispatch roast to Telegram: {e}")
+            try:
+                await send_live_toast(f"Marcus: {roast[:180]}")
             except Exception:
                 pass
 
