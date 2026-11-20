@@ -6,6 +6,7 @@ Flow:
   2. For any tx with roast_score >= 60, call generate_roast() via LLM.
   3. The roast message is stored back in the transaction and queued for delivery.
 """
+import asyncio
 import json
 import logging
 import re
@@ -63,6 +64,7 @@ def _get_llm_client() -> AsyncOpenAI:
     return AsyncOpenAI(
         api_key=settings.LLM_API_KEY,
         base_url=settings.LLM_BASE_URL,
+        timeout=15.0,
     )
 
 
@@ -270,14 +272,17 @@ async def generate_roast(
 
     client = _get_llm_client()
     try:
-        response = await client.chat.completions.create(
-            model=settings.LLM_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=400,
-            temperature=0.95,
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model=settings.LLM_MODEL,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                max_tokens=400,
+                temperature=0.95,
+            ),
+            timeout=12.0,
         )
         roast = (response.choices[0].message.content or "").strip()
         tx.roast_message = roast[:1000]
@@ -285,7 +290,17 @@ async def generate_roast(
         return roast
     except Exception as e:
         logger.error(f"LLM roast generation failed for tx {tx.id}: {e}")
-        return None
+        # Comedic fallback roast in Marcus's signature voice so user is never left hanging
+        card_name = account.display_name or "card"
+        m_name = tx.merchant_clean or tx.merchant_raw
+        amt = abs(float(tx.amount))
+        fallback_roast = (
+            f"Hold up right there! You really went and dropped ${amt:.2f} at '{m_name}' "
+            f"on your {card_name} while carrying ${total_debt:,.2f} in debt?! "
+            f"Did your budget take an unpaid vacation? Give me an excuse for this mess right now!"
+        )
+        tx.roast_message = fallback_roast
+        return fallback_roast
 
 
 # ---------------------------------------------------------------------------
